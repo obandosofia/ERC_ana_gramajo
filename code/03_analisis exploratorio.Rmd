@@ -1,0 +1,551 @@
+
+---
+title: "Análisis exploratorio de datos — Cohorte ERC"
+subtitle: "Seminario de Epidemiología Clínica II — Módulo 2"
+author: "Ana Sofía Gramajo"
+date: "Noviembre 2026"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(here)
+library(skimr)
+library(gtsummary)
+library(corrplot)
+
+# Cargar la base analítica de la semana 12
+base <- readRDS(
+  here("data", "processed",
+       "base_analitica_v1.0.rds")
+)
+
+cat("Base cargada:", nrow(base),
+    "participantes,",
+    ncol(base), "variables\n")
+```
+
+# Descripción de la base de datos
+
+La base analítica incluye `r nrow(base)` participantes con enfermedad renal crónica (ERC) en estadios G2 a G4, seguidos durante 24 meses, con dos puntos de evaluación: mes 12 y mes 24.
+
+El objetivo del análisis exploratorio es describir las características de la cohorte, examinar las distribuciones de las variables clínicas y verificar la calidad de los datos antes de implementar los modelos estadísticos.
+
+## Flujo de participantes
+
+```{r flujo-participantes}
+flujo <- tibble(
+  Etapa = c(
+    "Participantes en la base original",
+    "Pérdida de seguimiento al mes 12",
+    "Pérdida de seguimiento al mes 24",
+    "Participantes sin pérdida al mes 24",
+    "Participantes con progresión G5/TRR"
+  ),
+  N = c(
+    nrow(base),
+    sum(base$perdida_seguimiento_m12, na.rm = TRUE),
+    sum(base$perdida_seguimiento_m24, na.rm = TRUE),
+    sum(!base$perdida_seguimiento_m24, na.rm = TRUE),
+    sum(base$progresion_g5_o_trr, na.rm = TRUE)
+  )
+)
+
+flujo <- flujo %>%
+  mutate(
+    Porcentaje = paste0(
+      round(N / nrow(base) * 100, 1), "%"
+    )
+  )
+
+knitr::kable(
+  flujo,
+  caption = "Tabla 1. Flujo de participantes de la cohorte ERC"
+)
+```
+
+## Interpretación del flujo
+
+La cohorte incluyó 300 participantes. Al mes 24, `r sum(!base$perdida_seguimiento_m24, na.rm = TRUE)` participantes no registraron pérdida de seguimiento, lo que representa el `r round(mean(!base$perdida_seguimiento_m24, na.rm = TRUE) * 100, 1)`% de la cohorte original.
+
+Durante el seguimiento se registraron `r sum(base$progresion_g5_o_trr, na.rm = TRUE)` eventos de progresión a estadio G5 o inicio de terapia de reemplazo renal. Las pérdidas de seguimiento deberán considerarse al interpretar los análisis posteriores.
+
+
+
+# Resumen estadístico general
+
+En esta sección se presenta una exploración descriptiva de las principales variables sociodemográficas, clínicas y de seguimiento de los participantes de la cohorte.
+
+El propósito es identificar las características generales de la población, la distribución de las variables y la presencia de datos faltantes antes de realizar los análisis estadísticos posteriores.
+
+```{r resumen-estadistico}
+# Resumen de las variables principales
+
+skimr::skim(
+  base %>%
+    select(
+      edad,
+      estadio_basal,
+      sexo,
+      diabetes,
+      hipertension,
+      tfg_ml_min_basal,
+      creatinina_mg_dl_basal,
+      hemoglobina_g_dl_basal,
+      albumina_g_dl_basal,
+      proteinuria_mg_g_basal,
+      pas_mmhg_basal,
+      progresion_g5_o_trr,
+      tiempo_seguimiento_dias
+    )
+)
+```
+
+## Interpretación del resumen estadístico
+
+La cohorte estuvo conformada por 300 participantes con enfermedad renal crónica, con una edad media de 58.09 años (DE: 11.61) y una mediana de 58 años (RIQ: 51–66). El 52.3 % correspondió al sexo femenino. Entre las comorbilidades, la hipertensión arterial fue la más frecuente (86.3 %), seguida de la diabetes mellitus (40.7 %).
+
+En cuanto a los indicadores de función renal, la mediana de la TFG basal fue de 45 mL/min/1.73 m² (RIQ: 34–59), mientras que la creatinina sérica presentó una mediana de 1.69 mg/dL (RIQ: 1.22–2.23). La proteinuria mostró una distribución asimétrica hacia valores elevados, con una media de 454.63 mg/g y una mediana de 238.50 mg/g, lo que respalda la exploración de su transformación logarítmica para los análisis posteriores.
+
+No se identificaron datos faltantes en las variables incluidas en este resumen. Sin embargo, este hallazgo no implica que toda la base esté completa, debido a que previamente se identificaron valores ausentes en las variables de seguimiento.
+
+
+# Características basales de la cohorte
+
+## Tabla 1. Características por estadio de ERC
+
+```{r tabla-caracteristicas-basales}
+base %>%
+  select(
+    estadio_basal,
+    edad,
+    sexo,
+    etiologia_agrupada,
+    diabetes,
+    hipertension,
+    cardiopatia_isquemica,
+    imc_calculado,
+    pas_mmhg_basal,
+    tfg_ml_min_basal,
+    creatinina_mg_dl_basal,
+    hemoglobina_g_dl_basal,
+    albumina_g_dl_basal,
+    proteinuria_mg_g_basal,
+    anemia_basal,
+    ieca_o_ara2,
+    estatinas,
+    n_medicamentos_totales
+  ) %>%
+  tbl_summary(
+    by = estadio_basal,
+    label = list(
+      edad ~ "Edad (años)",
+      sexo ~ "Sexo",
+      etiologia_agrupada ~ "Etiología de ERC",
+      diabetes ~ "Diabetes mellitus",
+      hipertension ~ "Hipertensión arterial",
+      cardiopatia_isquemica ~ "Cardiopatía isquémica",
+      imc_calculado ~ "IMC (kg/m²)",
+      pas_mmhg_basal ~ "PAS (mmHg)",
+      tfg_ml_min_basal ~ "TFG (mL/min/1.73 m²)",
+      creatinina_mg_dl_basal ~ "Creatinina (mg/dL)",
+      hemoglobina_g_dl_basal ~ "Hemoglobina (g/dL)",
+      albumina_g_dl_basal ~ "Albúmina (g/dL)",
+      proteinuria_mg_g_basal ~ "Proteinuria (mg/g)",
+      anemia_basal ~ "Anemia basal",
+      ieca_o_ara2 ~ "Uso de IECA o ARA2",
+      estatinas ~ "Uso de estatinas",
+      n_medicamentos_totales ~ "Número de medicamentos"
+    ),
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}–{p75})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    missing = "ifany"
+  ) %>%
+  add_overall() %>%
+  add_p() %>%
+  modify_caption(
+    "**Tabla 1. Características basales por estadio de ERC**"
+  ) %>%
+  bold_labels()
+```
+Las características basales de los 300 participantes mostraron diferencias estadísticamente significativas entre los estadios de enfermedad renal crónica en la TFG, creatinina sérica, hemoglobina y presencia de anemia. La mediana de la TFG disminuyó de 74 mL/min/1.73 m² en G2 a 21 mL/min/1.73 m² en G4 (p < 0.001), mientras que la creatinina aumentó de 0.97 a 3.50 mg/dL (p < 0.001), un comportamiento clínicamente esperado, considerando que la TFG forma parte de la clasificación de los estadios. La hemoglobina presentó diferencias significativas (p = 0.004), con una menor mediana en G4 (10.8 g/dL), mientras que la frecuencia de anemia también varió entre los estadios (p = 0.043), alcanzando el 79 % en G4, aunque sin mostrar un gradiente completamente uniforme. No se identificaron diferencias estadísticamente significativas en edad, sexo, diabetes mellitus, hipertensión arterial, IMC, presión arterial sistólica ni proteinuria. Estos hallazgos sugieren diferencias en algunos indicadores de función renal y estado hematológico entre los estadios, aunque las comparaciones deben interpretarse como exploratorias.
+
+
+# Distribución de variables continuas
+
+## Histogramas
+
+Los histogramas permiten examinar la distribución de las principales variables clínicas basales, identificar posibles asimetrías y evaluar la necesidad de transformaciones para los análisis posteriores.
+
+```{r histogramas-basales}
+base %>%
+  select(
+    edad,
+    tfg_ml_min_basal,
+    creatinina_mg_dl_basal,
+    hemoglobina_g_dl_basal,
+    albumina_g_dl_basal,
+    proteinuria_mg_g_basal,
+    pas_mmhg_basal,
+    log_proteinuria_basal
+  ) %>%
+  pivot_longer(
+    everything(),
+    names_to = "variable",
+    values_to = "valor"
+  ) %>%
+  mutate(
+    variable = dplyr::recode(
+      variable,
+      "edad" = "Edad (años)",
+      "tfg_ml_min_basal" = "TFG (mL/min/1.73m²)",
+      "creatinina_mg_dl_basal" = "Creatinina (mg/dL)",
+      "hemoglobina_g_dl_basal" = "Hemoglobina (g/dL)",
+      "albumina_g_dl_basal" = "Albúmina (g/dL)",
+      "proteinuria_mg_g_basal" = "Proteinuria (mg/g)",
+      "pas_mmhg_basal" = "PAS (mmHg)",
+      "log_proteinuria_basal" = "Log-proteinuria"
+    )
+  ) %>%
+  filter(!is.na(valor)) %>%
+  ggplot(aes(x = valor)) +
+  geom_histogram(
+    bins = 25,
+    fill = "#2E75B6",
+    color = "white",
+    alpha = 0.8
+  ) +
+  facet_wrap(
+    ~variable,
+    scales = "free",
+    ncol = 4
+  ) +
+  labs(
+    title = "Distribución de variables continuas basales",
+    x = NULL,
+    y = "Frecuencia"
+  ) +
+  theme_minimal(base_size = 11)
+```
+Los histogramas mostraron distribuciones aproximadamente simétricas para la edad, hemoglobina, albúmina y presión arterial sistólica. En contraste, la creatinina sérica y la proteinuria presentaron una marcada asimetría positiva, con concentración de observaciones en valores bajos y presencia de valores extremos. La transformación logarítmica de la proteinuria permitió obtener una distribución visualmente más simétrica, lo que respalda su consideración en los análisis posteriores. Por otra parte, la TFG basal presentó una distribución heterogénea, posiblemente relacionada con la inclusión de participantes en diferentes estadios de enfermedad renal crónica. Estos hallazgos evidencian la importancia de evaluar la distribución de las variables y los supuestos de los modelos antes del análisis estadístico formal.
+
+
+## Valores atípicos por estadio
+
+Los diagramas de caja permiten comparar la distribución de las variables clínicas entre los diferentes estadios de enfermedad renal crónica e identificar posibles valores extremos residuales.
+
+```{r boxplots-estadios}
+base %>%
+  select(
+    estadio_basal,
+    tfg_ml_min_basal,
+    creatinina_mg_dl_basal,
+    hemoglobina_g_dl_basal,
+    albumina_g_dl_basal,
+    pas_mmhg_basal
+  ) %>%
+  pivot_longer(
+    -estadio_basal,
+    names_to = "variable",
+    values_to = "valor"
+  ) %>%
+  mutate(
+    variable = dplyr::recode(
+      variable,
+      "tfg_ml_min_basal" = "TFG (mL/min/1.73m²)",
+      "creatinina_mg_dl_basal" = "Creatinina (mg/dL)",
+      "hemoglobina_g_dl_basal" = "Hemoglobina (g/dL)",
+      "albumina_g_dl_basal" = "Albúmina (g/dL)",
+      "pas_mmhg_basal" = "PAS (mmHg)"
+    )
+  ) %>%
+  filter(!is.na(valor)) %>%
+  ggplot(aes(
+    x = estadio_basal,
+    y = valor,
+    fill = estadio_basal
+  )) +
+  geom_boxplot(
+    outlier.shape = 21,
+    outlier.fill = "red",
+    outlier.size = 2,
+    alpha = 0.7
+  ) +
+  scale_fill_brewer(palette = "Blues") +
+  facet_wrap(
+    ~variable,
+    scales = "free_y",
+    ncol = 3
+  ) +
+  labs(
+    title = "Distribución de variables por estadio de ERC",
+    subtitle = "Los puntos rojos indican posibles valores atípicos",
+    x = "Estadio de ERC",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none")
+```
+Los diagramas de caja mostraron una disminución progresiva de la TFG y un aumento de la creatinina sérica conforme avanzó el estadio de enfermedad renal crónica, un comportamiento esperado desde el punto de vista clínico y relacionado con los criterios utilizados para clasificar la enfermedad. La hemoglobina presentó valores centrales más bajos en el estadio G4, mientras que la albúmina y la presión arterial sistólica mostraron distribuciones relativamente similares entre los estadios. Se identificaron algunos valores atípicos residuales, particularmente en creatinina, hemoglobina y presión arterial sistólica. Destaca un valor extremo de creatinina de 18.5 mg/dL, cuya coherencia clínica requiere verificación con los registros originales. Estos hallazgos deben considerarse en la evaluación de calidad y en los análisis posteriores, sin asumir que todos los valores extremos corresponden a errores de medición.
+
+
+# Evolución longitudinal de las variables clave
+
+## TFG a lo largo del seguimiento
+
+Se examinó la evolución de la tasa de filtración glomerular estimada (TFG) desde el reclutamiento hasta los meses 12 y 24, según el estadio basal de enfermedad renal crónica.
+
+```{r evolucion-tfg}
+# Preparar los datos longitudinales
+
+datos_tfg <- base %>%
+  select(
+    id_estudio,
+    estadio_basal,
+    tfg_ml_min_basal,
+    tfg_ml_min_m12,
+    tfg_ml_min_m24
+  ) %>%
+  pivot_longer(
+    cols = starts_with("tfg_ml_min"),
+    names_to = "tiempo",
+    values_to = "tfg"
+  ) %>%
+  mutate(
+    mes = case_when(
+      tiempo == "tfg_ml_min_basal" ~ 0,
+      tiempo == "tfg_ml_min_m12" ~ 12,
+      tiempo == "tfg_ml_min_m24" ~ 24
+    )
+  ) %>%
+  filter(!is.na(tfg))
+
+# Gráfica de evolución
+
+ggplot(
+  datos_tfg,
+  aes(
+    x = mes,
+    y = tfg,
+    color = estadio_basal
+  )
+) +
+  geom_line(
+    aes(group = id_estudio),
+    alpha = 0.10,
+    linewidth = 0.3
+  ) +
+  stat_summary(
+    aes(group = estadio_basal),
+    fun = median,
+    geom = "line",
+    linewidth = 1.5
+  ) +
+  scale_x_continuous(
+    breaks = c(0, 12, 24),
+    labels = c("Basal", "Mes 12", "Mes 24")
+  ) +
+  scale_color_manual(
+    values = c(
+      "G2" = "#93C6E0",
+      "G3a" = "#4A90D9",
+      "G3b" = "#2E75B6",
+      "G4" = "#1F5C99"
+    )
+  ) +
+  labs(
+    title = "Evolución de la TFG durante el seguimiento",
+    subtitle = "Trayectorias individuales y medianas por estadio basal",
+    x = "Punto de seguimiento",
+    y = "TFG estimada (mL/min/1.73 m²)",
+    color = "Estadio basal"
+  ) +
+  theme_minimal(base_size = 13)
+```
+La evolución longitudinal de la tasa de filtración glomerular mostró una tendencia descendente durante los 24 meses de seguimiento en los cuatro estadios de enfermedad renal crónica. Los participantes clasificados inicialmente en G4 presentaron los valores más bajos de TFG y una disminución visualmente más pronunciada durante el seguimiento, mientras que aquellos en G2 mantuvieron valores más elevados y una reducción aparentemente menor. Este comportamiento es clínicamente plausible, considerando la mayor alteración de la función renal en los estadios avanzados. No obstante, las tendencias observadas corresponden a un análisis descriptivo y deben interpretarse considerando las pérdidas de seguimiento y la disponibilidad de mediciones en cada período.
+
+
+## Tasa anual de cambio de TFG por estadio
+
+Se calculó la tasa anual de cambio de la TFG a partir de la diferencia entre la medición basal y la del mes 24, dividida entre dos años. Los valores negativos indican disminución de la función renal.
+
+```{r tasa-declive-tfg}
+tabla_declive <- base %>%
+  filter(!is.na(tasa_declive_tfg)) %>%
+  group_by(estadio_basal) %>%
+  summarise(
+    n = n(),
+    mediana_declive = median(tasa_declive_tfg),
+    p25 = quantile(tasa_declive_tfg, 0.25),
+    p75 = quantile(tasa_declive_tfg, 0.75),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  tabla_declive,
+  digits = 1,
+  col.names = c(
+    "Estadio",
+    "N",
+    "Mediana (mL/min/año)",
+    "P25",
+    "P75"
+  ),
+  caption = "Tabla 2. Tasa anual de cambio de TFG por estadio basal"
+)
+```
+El análisis de la tasa anual de cambio de la TFG incluyó a 246 participantes con mediciones disponibles al inicio y al mes 24. Se observó una disminución de la función renal en los cuatro estadios, con una mediana de cambio anual de −3.5 mL/min/1.73 m² en G2, −4.0 en G3a y G3b, y −5.2 en G4. Los participantes clasificados inicialmente en G4 presentaron la mayor disminución mediana, lo que sugiere un deterioro más pronunciado de la función renal en este grupo. No obstante, estos resultados son descriptivos y deben interpretarse considerando la ausencia de mediciones de seguimiento en algunos participantes y la posibilidad de que las pérdidas no hayan ocurrido de manera aleatoria.
+
+
+# Correlaciones entre variables basales
+
+## Matriz de correlación de Spearman
+
+Se evaluaron las correlaciones entre las principales variables clínicas basales utilizando el coeficiente de Spearman, debido a la presencia de distribuciones asimétricas en algunas variables.
+
+```{r correlaciones-basales}
+# Seleccionar variables numéricas
+variables_cor <- base %>%
+  select(
+    edad,
+    imc_calculado,
+    pas_mmhg_basal,
+    tfg_ml_min_basal,
+    creatinina_mg_dl_basal,
+    hemoglobina_g_dl_basal,
+    albumina_g_dl_basal,
+    log_proteinuria_basal
+  )
+
+# Calcular matriz de correlaciones
+matriz_cor <- cor(
+  variables_cor,
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+# Mostrar matriz numérica
+round(matriz_cor, 2)
+
+# Visualizar matriz
+corrplot::corrplot(
+  matriz_cor,
+  method = "color",
+  type = "lower",
+  order = "original",
+  addCoef.col = "black",
+  number.cex = 0.65,
+  tl.col = "black",
+  tl.cex = 0.7,
+  tl.srt = 45,
+  title = "Correlaciones entre variables clínicas basales",
+  mar = c(0, 0, 2, 0)
+)
+```
+El análisis de correlaciones de Spearman mostró una asociación negativa muy fuerte entre la TFG y la creatinina sérica basal (rho = −0.95), un resultado clínicamente esperado debido a la relación entre ambos indicadores de función renal. Las demás variables presentaron correlaciones débiles o prácticamente nulas, sin evidenciar relaciones monotónicas importantes. La correlación elevada entre TFG y creatinina deberá considerarse durante la construcción de los modelos multivariables, debido al riesgo de multicolinealidad si ambas se incluyen simultáneamente como variables explicativas. Estos resultados son exploratorios y no permiten establecer relaciones causales.
+
+
+# Evaluación de calidad de los datos
+
+## Integridad y datos faltantes
+
+Se evaluó la integridad de los registros, la presencia de identificadores duplicados y la disponibilidad de las mediciones durante el seguimiento.
+
+```{r calidad-datos}
+# Verificar integridad de la base
+calidad_general <- tibble(
+  Indicador = c(
+    "Participantes",
+    "Variables analíticas",
+    "Identificadores duplicados",
+    "Identificadores faltantes",
+    "Eventos de progresión"
+  ),
+  Resultado = c(
+    nrow(base),
+    ncol(base),
+    sum(duplicated(base$id_estudio)),
+    sum(is.na(base$id_estudio)),
+    sum(base$progresion_g5_o_trr, na.rm = TRUE)
+  )
+)
+
+knitr::kable(
+  calidad_general,
+  caption = "Tabla 3. Indicadores de integridad de la base"
+)
+
+# Disponibilidad de mediciones de seguimiento
+faltantes_clinicos <- base %>%
+  select(
+    tfg_ml_min_m12,
+    hemoglobina_g_dl_m12,
+    albumina_g_dl_m12,
+    proteinuria_mg_g_m12,
+    tfg_ml_min_m24,
+    hemoglobina_g_dl_m24,
+    albumina_g_dl_m24,
+    proteinuria_mg_g_m24
+  ) %>%
+  summarise(
+    across(
+      everything(),
+      ~sum(is.na(.))
+    )
+  ) %>%
+  pivot_longer(
+    everything(),
+    names_to = "Variable",
+    values_to = "Faltantes"
+  ) %>%
+  mutate(
+    Porcentaje = round(
+      Faltantes / nrow(base) * 100, 1
+    )
+  )
+
+knitr::kable(
+  faltantes_clinicos,
+  caption = "Tabla 4. Datos faltantes en mediciones de seguimiento"
+)
+```
+
+La evaluación de calidad de los datos confirmó que la base analítica contiene 300 participantes y 56 variables, sin identificadores duplicados ni faltantes. Durante el seguimiento se observó un incremento en la proporción de datos faltantes en distintas variables clínicas. En particular, la ausencia de mediciones de TFG aumentó del 12.3 % al mes 12 al 18.0 % al mes 24, mientras que los datos faltantes de hemoglobina aumentaron del 17.3 % al 22.7 % y los de albúmina del 17.0 % al 25.0 %. Estos resultados evidencian una menor disponibilidad de información clínica en el seguimiento a 24 meses, aspecto que deberá considerarse en los análisis longitudinales y multivariables. No es posible establecer el mecanismo de ausencia de datos únicamente a partir de estos resultados, por lo que se reconoce la posibilidad de sesgo relacionado con las mediciones faltantes.
+
+# Síntesis de hallazgos y consideraciones para el modelado
+
+## Principales hallazgos
+
+El análisis exploratorio incluyó 300 participantes con enfermedad renal crónica en estadios G2 a G4. La población presentó una edad media de 58.09 años y una elevada frecuencia de hipertensión arterial (86.3 %) y diabetes mellitus (40.7 %). Se identificaron diferencias estadísticamente significativas entre estadios en la TFG, creatinina sérica, hemoglobina y presencia de anemia, mientras que las demás características basales mostraron distribuciones relativamente similares.
+
+Durante los 24 meses de seguimiento se observó una disminución de la TFG en todos los estadios, con una mayor reducción mediana anual en G4 (−5.2 mL/min/1.73 m²/año). Además, la correlación negativa elevada entre la TFG y la creatinina basal (rho = −0.95) evidencia la necesidad de considerar posibles problemas de multicolinealidad durante la construcción de los modelos estadísticos.
+
+## Calidad de los datos y limitaciones
+
+La base analítica contiene 300 registros únicos y 56 variables. Se identificó un incremento de datos faltantes durante el seguimiento, con proporciones al mes 24 que oscilaron entre 18.0 % para la TFG y 25.0 % para la albúmina. Este comportamiento podría afectar la precisión de las estimaciones y generar sesgo si la ausencia de mediciones está relacionada con las características clínicas de los participantes.
+
+Durante la limpieza se identificaron valores extremos y registros inconsistentes. Se realizaron correcciones provisionales con fines didácticos, cuya validez deberá verificarse con la información original antes de utilizarlas en un análisis clínico real.
+
+Adicionalmente, se registraron 33 eventos de progresión, lo que limita la complejidad de los modelos multivariables. La distribución desigual de eventos entre los estadios requiere especial atención durante la selección de predictores y la interpretación de los resultados.
+
+## Conclusión
+
+El análisis exploratorio permitió caracterizar la cohorte, identificar patrones de evolución de la función renal y documentar aspectos relevantes de la calidad de los datos. Los resultados proporcionan una base para los análisis estadísticos posteriores, particularmente los modelos de regresión logística, regresión lineal y supervivencia. No obstante, será necesario considerar los datos faltantes, los valores extremos y el número limitado de eventos para favorecer estimaciones interpretables y metodológicamente justificadas.
+
+
