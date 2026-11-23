@@ -1,0 +1,70 @@
+MEMO DE PREPARACIÓN DE DATOS
+Proyecto: Cohorte de enfermedad renal crónica
+Autora: Ana Sofía Gramajo
+Fecha: Noviembre 2026
+
+1. IDENTIFICACIÓN Y CORRECCIÓN DE VALORES ATÍPICOS
+
+Creatinina basal:
+ERC-0058: 0.08 a 0.84 mg/dL.
+Corrección didáctica por posible error decimal.
+No verificada con el registro original.
+
+ERC-0064: 142 a 1.61 mg/dL aproximadamente.
+Se asumió un posible error de unidades:
+142 micromol/L dividido entre 88.4.
+Conversión pendiente de confirmación documental.
+
+ERC-0122: 18.50 mg/dL conservado.
+Valor extremo que requiere verificación clínica.
+
+Peso basal:
+ERC-0152: 198 kg reemplazado por NA.
+Inconsistente con talla e IMC registrados.
+
+ERC-0234: 8.5 kg reemplazado por NA.
+Valor incompatible con las características
+antropométricas registradas para un adulto.
+
+Las correcciones son decisiones del ejercicio.
+No representan verificaciones de datos originales.
+
+2. VARIABLES DERIVADAS
+
+Se crearon grupos de edad, estadio agrupado,
+etiología agrupada, logaritmo de proteinuria,
+cambios de TFG a 12 y 24 meses, tasa anual
+de cambio de TFG y presencia de anemia.
+
+Se conservó el estadio basal original.
+También se creó estadio_modelo: G2-G3b vs G4,
+siguiendo la recomendación de la profesora.
+
+3. DATOS FALTANTES
+
+TFG al mes 12: 37 de 300 registros faltantes
+(12.3%). El estadio G3b presentó 20% de
+datos faltantes en esta variable.
+
+No se realizó imputación de datos faltantes.
+El mecanismo de ausencia no está establecido.
+
+4. BASE ANALÍTICA
+
+Se conservaron los 300 participantes.
+Se excluyeron las variables auxiliares de
+verificación y el IMC original, reemplazado
+por el IMC calculado cuando fue posible.
+
+La base analítica se exportó en formatos
+RDS y CSV dentro de data/processed/.
+
+5. LIMITACIONES PARA EL MODELADO
+
+Se registraron 33 eventos de progresión.
+Agrupación G2-G3b: 247 participantes, 1 evento.
+Agrupación G4: 53 participantes, 32 eventos.
+El escaso número de eventos en una categoría
+puede producir estimaciones inestables.
+La agrupación también reduce el gradiente clínico
+entre los estadios originales.
