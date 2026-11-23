@@ -1,0 +1,333 @@
+
+---
+title: "Análisis de regresión lineal — Cohorte ERC"
+subtitle: "Factores asociados a la tasa anual de cambio de la TFG"
+author: "Ana Sofía Gramajo"
+date: "Noviembre 2026"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(here)
+library(gtsummary)
+library(car)
+```
+
+# Descripción del análisis
+
+El objetivo es evaluar los factores basales asociados con la tasa anual de cambio de la tasa de filtración glomerular (TFG) en pacientes con enfermedad renal crónica.
+
+La variable dependiente será la tasa anual de cambio de TFG, expresada en mL/min/1.73 m² por año. Los valores negativos indican disminución de la función renal.
+
+# Preparación de datos
+
+```{r preparacion-lineal}
+# Cargar la base analítica
+base <- readRDS(
+  here("data", "processed",
+       "base_analitica_v1.0.rds")
+)
+
+# Seleccionar participantes con información
+# para calcular la tasa de cambio
+base_lineal <- base %>%
+  filter(
+    !is.na(tasa_declive_tfg),
+    !is.na(estadio_basal),
+    !is.na(log_proteinuria_basal)
+  )
+
+# Verificar participantes
+cat("Participantes:", nrow(base_lineal), "\n")
+
+# Mediana de cambio anual
+cat(
+  "Mediana de cambio anual:",
+  round(median(base_lineal$tasa_declive_tfg), 2),
+  "mL/min/1.73 m² por año\n"
+)
+
+# Resumen por estadio
+base_lineal %>%
+  group_by(estadio_basal) %>%
+  summarise(
+    participantes = n(),
+    mediana = median(tasa_declive_tfg),
+    p25 = quantile(tasa_declive_tfg, 0.25),
+    p75 = quantile(tasa_declive_tfg, 0.75),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 2,
+    caption = "Tasa anual de cambio de TFG por estadio basal"
+  )
+```
+
+# Distribución de la tasa anual de cambio de TFG
+
+Se examinó la distribución de la tasa anual de cambio de la TFG mediante un histograma, con el propósito de identificar su tendencia central, dispersión y posibles valores extremos.
+
+```{r histograma-declive}
+ggplot(
+  base_lineal,
+  aes(x = tasa_declive_tfg)
+) +
+  geom_histogram(
+    bins = 30,
+    fill = "#2E75B6",
+    color = "white",
+    alpha = 0.8
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = "red"
+  ) +
+  labs(
+    title = "Distribución de la tasa anual de cambio de TFG",
+    subtitle = "Valores negativos indican disminución de la función renal",
+    x = "Cambio anual de TFG (mL/min/1.73 m²/año)",
+    y = "Frecuencia"
+  ) +
+  theme_minimal(base_size = 12)
+```
+La distribución de la tasa anual de cambio de la TFG mostró un predominio de valores negativos, lo que indica una disminución de la función renal en la mayoría de los participantes durante los 24 meses de seguimiento. La mediana de cambio anual fue de −4.5 mL/min/1.73 m cuadrados, con una mayor concentración de observaciones entre aproximadamente −6 y −3 mL/min/1.73 m cuadrados por año. Se observaron algunos valores extremos y un número reducido de participantes con cambios positivos. Estos resultados respaldan la evaluación de los factores asociados con el cambio anual de la TFG mediante regresión lineal múltiple, cuyos supuestos deberán verificarse a través del análisis de residuos y observaciones influyentes.
+
+# Modelo de regresión lineal múltiple
+
+Se estimó un modelo de regresión lineal múltiple para evaluar los factores basales asociados con la tasa anual de cambio de la TFG. Se utilizó el estadio G2 como categoría de referencia.
+
+```{r modelo-lineal-ajustado}
+# Preparar los datos del modelo
+
+base_lineal_modelo <- base_lineal %>%
+  mutate(
+    estadio_basal = factor(
+      as.character(estadio_basal),
+      levels = c("G2", "G3a", "G3b", "G4"),
+      ordered = FALSE
+    ),
+    diabetes = factor(
+      diabetes,
+      levels = c(FALSE, TRUE),
+      labels = c("No", "Sí")
+    ),
+    hipertension = factor(
+      hipertension,
+      levels = c(FALSE, TRUE),
+      labels = c("No", "Sí")
+    ),
+    ieca_o_ara2 = factor(
+      ieca_o_ara2,
+      levels = c(FALSE, TRUE),
+      labels = c("No", "Sí")
+    )
+  ) %>%
+
+  select(
+    tasa_declive_tfg,
+    estadio_basal,
+    edad,
+    sexo,
+    diabetes,
+    hipertension,
+    log_proteinuria_basal,
+    hemoglobina_g_dl_basal,
+    pas_mmhg_basal,
+    ieca_o_ara2
+  ) %>%
+  drop_na()
+
+# Construir el modelo ajustado
+modelo_lineal <- lm(
+  tasa_declive_tfg ~
+    estadio_basal +
+    edad +
+    sexo +
+    diabetes +
+    hipertension +
+    log_proteinuria_basal +
+    hemoglobina_g_dl_basal +
+    pas_mmhg_basal +
+    ieca_o_ara2,
+  data = base_lineal_modelo
+)
+
+# Verificar participantes
+cat("Participantes incluidos:",
+    nobs(modelo_lineal), "\n")
+
+# Resultados
+gtsummary::tbl_regression(
+  modelo_lineal,
+  label = list(
+    estadio_basal ~ "Estadio basal (ref: G2)",
+    edad ~ "Edad (por año)",
+    sexo ~ "Sexo",
+    diabetes ~ "Diabetes mellitus",
+    hipertension ~ "Hipertensión arterial",
+    log_proteinuria_basal ~ "Log-proteinuria basal",
+    hemoglobina_g_dl_basal ~ "Hemoglobina (g/dL)",
+    pas_mmhg_basal ~ "PAS (mmHg)",
+    ieca_o_ara2 ~ "Uso de IECA o ARA2"
+  )
+) %>%
+  gtsummary::bold_labels() %>%
+  gtsummary::modify_caption(
+    "**Tabla 2. Modelo de regresión lineal múltiple para cambio anual de TFG**"
+  )
+```
+
+El modelo de regresión lineal múltiple mostró que el estadio G4 se asoció con una mayor disminución anual de la TFG en comparación con G2 (β = −1.90 mL/min/1.73 m²/año; IC del 95 %: −2.80 a −1.00; p < 0.001), después de ajustar por las covariables incluidas. En contraste, los estadios G3a y G3b no presentaron diferencias estadísticamente significativas respecto a G2. Asimismo, la presencia de diabetes mellitus (β = −0.71; IC del 95 %: −1.30 a −0.11; p = 0.021) y el uso de IECA o ARA2 (β = −0.87; IC del 95 %: −1.50 a −0.27; p = 0.005) se asociaron con un cambio anual más negativo de la función renal. Las demás variables evaluadas no mostraron asociaciones estadísticamente significativas. Estos resultados deben interpretarse como asociaciones observacionales y no como relaciones causales, especialmente en el caso del uso de IECA o ARA2, donde podría existir confusión por indicación.
+
+
+# Verificación de supuestos del modelo lineal
+
+## Gráficos diagnósticos
+
+Se evaluaron los residuos del modelo mediante gráficos diagnósticos para explorar linealidad, homocedasticidad, normalidad de residuos y presencia de observaciones influyentes.
+
+```{r diagnosticos-lineales, fig.width=10, fig.height=8} 
+par(mfrow = c(2, 2))
+
+plot(modelo_lineal)
+
+par(mfrow = c(1, 1))
+```
+La evaluación gráfica de los supuestos del modelo de regresión lineal múltiple mostró una distribución de los residuos alrededor de cero, aunque con una ligera curvatura que podría sugerir desviaciones de la linealidad. El gráfico Q-Q evidenció una distribución aproximadamente normal de los residuos, con pequeñas desviaciones en los extremos. Por otra parte, el gráfico Scale-Location mostró variaciones moderadas en la dispersión de los residuos, por lo que no puede descartarse completamente la presencia de heterocedasticidad. Se identificaron algunas observaciones potencialmente influyentes que requieren evaluación adicional mediante la distancia de Cook. En conjunto, los diagnósticos gráficos no evidencian problemas graves, pero justifican verificaciones complementarias antes de considerar definitivas las inferencias del modelo.
+
+
+## Evaluación de multicolinealidad
+
+Se evaluó la multicolinealidad entre las variables explicativas mediante el factor de inflación de la varianza (VIF).
+
+```{r vif-modelo-lineal}
+# Calcular VIF
+vif_lineal <- car::vif(modelo_lineal)
+
+# Mostrar resultados
+print(round(vif_lineal, 2))
+```
+La evaluación de multicolinealidad mediante el factor de inflación de la varianza (VIF) mostró valores cercanos a 1 para todas las variables explicativas incluidas en el modelo de regresión lineal múltiple. Para el estadio basal, que contiene cuatro categorías, se utilizó el GVIF ajustado por sus grados de libertad, obteniéndose un valor de 1.02. Los resultados no evidenciaron problemas relevantes de multicolinealidad entre los predictores. Esto favorece la interpretación individual de los coeficientes estimados, aunque no descarta otras posibles limitaciones del modelo.
+
+## Evaluación de observaciones influyentes
+
+Se evaluó la influencia de las observaciones mediante la distancia de Cook. Se utilizó el criterio exploratorio de 4/n para identificar registros que requieren una revisión adicional.
+
+```{r distancia-cook}
+# Calcular distancia de Cook
+cook <- cooks.distance(modelo_lineal)
+
+# Umbral exploratorio
+umbral_cook <- 4 / nobs(modelo_lineal)
+
+# Crear tabla
+tabla_cook <- tibble(
+  fila_modelo = seq_along(cook),
+  distancia_cook = as.numeric(cook)
+)
+
+# Identificar observaciones por encima del umbral
+influyentes <- tabla_cook %>%
+  filter(distancia_cook > umbral_cook) %>%
+  arrange(desc(distancia_cook))
+
+# Mostrar resultados
+cat("Umbral de Cook:",
+    round(umbral_cook, 4), "\n")
+
+cat("Distancia máxima:",
+    round(max(cook), 4), "\n")
+
+cat("Observaciones por encima del umbral:",
+    nrow(influyentes), "\n")
+
+knitr::kable(
+  head(influyentes, 10),
+  digits = 4,
+  caption = "Observaciones con mayor distancia de Cook"
+)
+```
+La evaluación de observaciones influyentes mediante la distancia de Cook identificó nueve registros (3.7 %) que superaron el umbral exploratorio de 4/n (0.0163). La distancia máxima observada fue de 0.0563, sin evidenciar valores de influencia extremadamente elevados según los criterios habituales. Estos resultados sugieren que algunas observaciones podrían influir sobre los coeficientes estimados, aunque su identificación no justifica eliminarlas automáticamente. Por esta razón, se realizará un análisis de sensibilidad para evaluar la estabilidad de las asociaciones del modelo.
+
+## Análisis de sensibilidad
+
+Se compararon los coeficientes del modelo principal con los de un modelo exploratorio que excluye las observaciones identificadas mediante el umbral de Cook. El objetivo es evaluar la estabilidad de los resultados, sin modificar el análisis principal.
+
+```{r sensibilidad-lineal}
+# Identificar observaciones por encima del umbral
+indices_influyentes <- which(cook > umbral_cook)
+
+# Ajustar modelo sin esas observaciones
+modelo_lineal_sens <- lm(
+  formula(modelo_lineal),
+  data = base_lineal_modelo[
+    -indices_influyentes, ,
+    drop = FALSE
+  ]
+)
+
+# Comparar coeficientes
+comparacion <- bind_rows(
+  broom::tidy(modelo_lineal, conf.int = TRUE) %>%
+    mutate(modelo = "Principal"),
+  broom::tidy(modelo_lineal_sens, conf.int = TRUE) %>%
+    mutate(modelo = "Sensibilidad")
+) %>%
+  filter(term %in% c(
+    "estadio_basalG4",
+    "diabetesSí",
+    "ieca_o_ara2Sí"
+  )) %>%
+  select(
+    modelo, term, estimate,
+    conf.low, conf.high, p.value
+  )
+
+cat("Participantes del modelo principal:",
+    nobs(modelo_lineal), "\n")
+
+cat("Participantes del análisis de sensibilidad:",
+    nobs(modelo_lineal_sens), "\n")
+
+knitr::kable(
+  comparacion,
+  digits = 3,
+  col.names = c(
+    "Modelo", "Variable", "Beta",
+    "IC inferior", "IC superior", "Valor p"
+  ),
+  caption = "Comparación de modelos: análisis de sensibilidad"
+)
+```
+El análisis de sensibilidad se realizó excluyendo temporalmente las nueve observaciones que superaron el umbral exploratorio de la distancia de Cook, reduciendo la muestra de 246 a 237 participantes. Los resultados mostraron que las asociaciones identificadas en el modelo principal se mantuvieron en la misma dirección y conservaron su significación estadística. El coeficiente del estadio G4 cambió de β = −1.934 a β = −2.076, mientras que los coeficientes de diabetes mellitus y uso de IECA o ARA2 pasaron de −0.708 a −0.728 y de −0.870 a −0.962, respectivamente. Estos hallazgos sugieren una estabilidad razonable de las principales asociaciones frente a la exclusión de las observaciones señaladas. No obstante, este análisis no descarta otras fuentes de sesgo ni sustituye la evaluación de los supuestos del modelo.
+
+
+# Conclusiones del análisis de regresión lineal
+
+El análisis de regresión lineal múltiple identificó asociaciones estadísticamente significativas entre el estadio G4, la presencia de diabetes mellitus y el uso de IECA o ARA2 con una mayor disminución anual de la TFG.
+
+Los resultados se mantuvieron en la misma dirección después de excluir temporalmente las nueve observaciones identificadas mediante la distancia de Cook, lo que sugiere una estabilidad razonable de las asociaciones principales.
+
+La evaluación de multicolinealidad no identificó problemas relevantes. Sin embargo, los gráficos diagnósticos mostraron ligeras desviaciones de la linealidad y posibles variaciones en la dispersión de los residuos, por lo que se recomienda complementar la evaluación con métodos de inferencia robustos.
+
+Estos hallazgos corresponden a asociaciones observacionales y no permiten establecer relaciones causales. En particular, la asociación entre IECA o ARA2 y el cambio anual de la TFG podría estar influida por confusión por indicación.
+
+# Información de sesión
+
+```{r informacion_sesion}
+sessionInfo()
+```

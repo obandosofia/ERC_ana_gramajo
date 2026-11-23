@@ -1,0 +1,222 @@
+
+---
+title: "Análisis de regresión logística — Cohorte ERC"
+subtitle: "Factores asociados a la progresión a G5 o TRR"
+author: "Ana Sofía Gramajo"
+date: "Noviembre 2026"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(here)
+library(gtsummary)
+library(broom)
+library(car)
+```
+
+# Descripción del análisis
+
+El objetivo es evaluar los factores basales asociados con la progresión de la enfermedad renal crónica a estadio G5 o inicio de terapia de reemplazo renal.
+
+Debido al escaso número de eventos, se utilizará la agrupación de estadios G2–G3b frente a G4, siguiendo la recomendación de la profesora.
+
+# Preparación de datos
+
+```{r preparacion-datos}
+# Cargar la base analítica
+base <- readRDS(
+  here("data", "processed",
+       "base_analitica_v1.0.rds")
+)
+
+# Preparar datos para regresión logística
+base_log <- base %>%
+  filter(
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_modelo)
+  ) %>%
+  mutate(
+    estadio_modelo = factor(
+      as.character(estadio_modelo),
+      levels = c("G2-G3b", "G4")
+    )
+  )
+
+# Verificar participantes y eventos
+cat("Participantes:", nrow(base_log), "\n")
+
+cat("Eventos:",
+    sum(base_log$progresion_g5_o_trr),
+    "\n")
+
+# Distribución de eventos por grupo
+tabla_eventos <- base_log %>%
+  group_by(estadio_modelo) %>%
+  summarise(
+    Participantes = n(),
+    Eventos = sum(progresion_g5_o_trr),
+    Porcentaje = round(
+      Eventos / Participantes * 100, 1
+    ),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  tabla_eventos,
+  caption = "Eventos de progresión según estadio agrupado"
+)
+```
+
+# Modelo de regresión logística crudo
+
+Se estimó un modelo de regresión logística para evaluar la asociación entre el estadio basal agrupado y la progresión a G5 o inicio de terapia de reemplazo renal.
+
+Se utilizó G2–G3b como categoría de referencia y G4 como categoría de comparación.
+
+```{r modelo-crudo}
+# Ajustar modelo crudo
+modelo_crudo <- glm(
+  progresion_g5_o_trr ~ estadio_modelo,
+  data = base_log,
+  family = binomial(link = "logit")
+)
+
+# Tabla de resultados
+gtsummary::tbl_regression(
+  modelo_crudo,
+  exponentiate = TRUE,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC"
+  )
+) %>%
+  gtsummary::bold_labels() %>%
+  gtsummary::modify_caption(
+    "**Tabla 2. OR crudo de progresión a G5/TRR**"
+  )
+```
+El modelo de regresión logística crudo mostró una asociación estadísticamente significativa entre el estadio basal de enfermedad renal crónica y la progresión a G5 o inicio de terapia de reemplazo renal. Los participantes clasificados en el estadio G4 presentaron mayores odds de progresión en comparación con el grupo G2–G3b (OR = 375; IC del 95 %: 74.9–6,836; p < 0.001). Sin embargo, la amplitud del intervalo de confianza evidencia una precisión limitada, relacionada con la distribución extremadamente desigual de los eventos entre los grupos. Por tanto, aunque los resultados muestran una asociación importante, la magnitud del OR debe interpretarse con cautela debido a la posible inestabilidad de las estimaciones.
+
+
+# Modelo de regresión logística ajustado
+
+Se exploró un modelo ajustado parsimonioso que incluye el estadio basal agrupado, la edad y la log-proteinuria basal. La selección limitada de covariables responde al bajo número de eventos observados.
+
+```{r modelo-ajustado}
+# Seleccionar participantes con datos completos
+base_log_aj <- base_log %>%
+  filter(
+    !is.na(edad),
+    !is.na(log_proteinuria_basal)
+  )
+
+# Ajustar modelo
+modelo_ajustado <- glm(
+  progresion_g5_o_trr ~
+    estadio_modelo +
+    edad +
+    log_proteinuria_basal,
+  data = base_log_aj,
+  family = binomial(link = "logit")
+)
+
+# Verificar tamaño de muestra y convergencia
+cat("Participantes:", nobs(modelo_ajustado), "\n")
+
+cat("Eventos:",
+    sum(base_log_aj$progresion_g5_o_trr), "\n")
+
+cat("Convergencia:",
+    modelo_ajustado$converged, "\n")
+
+# Tabla de resultados
+gtsummary::tbl_regression(
+  modelo_ajustado,
+  exponentiate = TRUE,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC",
+    edad ~ "Edad (por año)",
+    log_proteinuria_basal ~ "Log-proteinuria basal"
+  )
+) %>%
+  gtsummary::bold_labels() %>%
+  gtsummary::modify_caption(
+    "**Tabla 3. OR ajustados de progresión a G5/TRR**"
+  )
+```
+El modelo de regresión logística ajustado por edad y log-proteinuria basal mostró una asociación estadísticamente significativa entre el estadio G4 y la progresión a G5 o inicio de terapia de reemplazo renal (OR ajustado = 380; IC del 95 %: 75.5–6,934; p < 0.001). La magnitud de la asociación prácticamente no cambió respecto al modelo crudo (OR = 375), lo que indica que el ajuste por estas dos covariables tuvo una influencia limitada sobre la estimación puntual. La edad (OR = 0.99; p = 0.8) y la log-proteinuria basal (OR = 1.18; p = 0.5) no mostraron asociaciones estadísticamente significativas. Sin embargo, la amplitud del intervalo de confianza del estadio G4 y el escaso número de eventos en el grupo de referencia sugieren una precisión limitada. 
+
+#. Verificación de supuestos del modelo
+
+## Multicolinealidad
+
+Se evaluó la multicolinealidad entre los predictores mediante el factor de inflación de la varianza (VIF).
+
+```{r vif-logistico}
+# Calcular VIF
+vif_valores <- car::vif(modelo_ajustado)
+
+# Mostrar resultados
+print(round(vif_valores, 2))
+
+cat(
+  "\nVIF máximo:",
+  round(max(vif_valores), 2),
+  "\n"
+)
+```
+La evaluación de multicolinealidad mostró valores del factor de inflación de la varianza (VIF) cercanos a 1 para el estadio basal agrupado, la edad y la logproteinuria basal. EStos resultados no evidencian problemas relevantes de multicolinealidad entre las variables explicativas incluidas en el modelo ajustado. Sin embargo, la ausencia de multicolinealidad no garantiza la estabilidad de las estimaciones, especialmente considerando el número limitado de eventos de progresión y su distribución desigual entre los grupos.
+
+## Bondad de ajuste: prueba de Hosmer-Lemeshow
+
+Se evaluó la concordancia entre los eventos observados y las probabilidades estimadas por el modelo mediante la prueba de Hosmer-Lemeshow.
+
+```{r hosmer-lemeshow}
+# Prueba de bondad de ajuste
+hl_test <- ResourceSelection::hoslem.test(
+  x = as.integer(base_log_aj$progresion_g5_o_trr),
+  y = fitted(modelo_ajustado),
+  g = 10
+)
+
+# Mostrar resultados
+print(hl_test)
+
+cat(
+  "\nValor p:",
+  round(hl_test$p.value, 4),
+  "\n"
+)
+```
+
+La prueba se interpretará con precaución por el escaso número de eventos y a las probabilidades muy diferentes entre grupos.
+
+La prueba de bondad de ajuste de Hosmer-Lemeshow no mostró evidencia estadísticamente significativa de falta de ajuste del modelo (x-squared = 6.38; Gl = 8; p = 0.605). Este resultado indica que no se detectaron discrepancias significativas entre los eventos observados y las probabilidades estimadas mediante esta prueba. Sin embargo, debido al número limitado de eventos de progresión y su distribución desigual entre los grupos de estadio renal, el resultado debe interpretarse con cautela, ya que la prueba puede presentar capacidad limitada para identificar problemas de calibración en estas condiciones.
+
+
+# Conclusiones del análisis de regresión logística
+
+El estadio G4 mostró una asociación estadísticamente significativa con la progresión a G5 o inicio de terapia de reemplazo renal, tanto en el modelo crudo como en el ajustado por edad y log-proteinuria basal.
+
+La magnitud del OR fue elevada y prácticamente no cambió después del ajuste. No se identificaron problemas relevantes de multicolinealidad y la prueba de Hosmer-Lemeshow no mostró evidencia significativa de falta de ajuste.
+
+Sin embargo, los resultados requieren una interpretación cautelosa debido a los 33 eventos disponibles y a la presencia de un único evento en el grupo de referencia G2–G3b. La amplitud de los intervalos de confianza limita la precisión de las estimaciones.
+
+# Información de sesión
+
+```{r informacion_sesion}
+sessionInfo()
+```
+

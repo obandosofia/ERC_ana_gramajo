@@ -1,0 +1,338 @@
+
+---
+title: "Análisis de supervivencia — Cohorte ERC"
+subtitle: "Tiempo hasta progresión a G5 o inicio de TRR"
+author: "Ana Sofía Gramajo"
+date: "Noviembre 2026"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(here)
+library(survival)
+library(survminer)
+library(gtsummary)
+```
+
+# Descripción del análisis
+
+El objetivo es evaluar el tiempo hasta la progresión de la enfermedad renal crónica a estadio G5 o inicio de terapia de reemplazo renal.
+
+Se utilizarán métodos de Kaplan-Meier y regresión de Cox. Para los modelos de progresión se empleará la agrupación G2–G3b frente a G4, siguiendo la recomendación de la profesora.
+
+# Preparación de datos para supervivencia
+
+```{r preparacion-supervivencia}
+# Cargar base analítica
+base <- readRDS(
+  here("data", "processed",
+       "base_analitica_v1.0.rds")
+)
+
+# Preparar datos
+base_sup <- base %>%
+  select(
+    id_estudio,
+    tiempo_seguimiento_dias,
+    progresion_g5_o_trr,
+    estadio_modelo,
+    edad,
+    sexo,
+    log_proteinuria_basal
+  ) %>%
+  filter(
+    !is.na(tiempo_seguimiento_dias),
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_modelo)
+  ) %>%
+  mutate(
+    evento = as.integer(progresion_g5_o_trr),
+    estadio_modelo = factor(
+      as.character(estadio_modelo),
+      levels = c("G2-G3b", "G4")
+    )
+  )
+
+# Verificar tiempos válidos
+stopifnot(
+  all(is.finite(base_sup$tiempo_seguimiento_dias)),
+  all(base_sup$tiempo_seguimiento_dias >= 0)
+)
+
+# Resumen general
+cat("Participantes:", nrow(base_sup), "\n")
+cat("Eventos:", sum(base_sup$evento), "\n")
+cat("Censurados:", sum(base_sup$evento == 0), "\n")
+
+# Distribución por estadio
+tabla_sup <- base_sup %>%
+  group_by(estadio_modelo) %>%
+  summarise(
+    participantes = n(),
+    eventos = sum(evento),
+    censurados = sum(evento == 0),
+    mediana_dias = median(tiempo_seguimiento_dias),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  tabla_sup,
+  digits = 1,
+  caption = "Tabla 1. Características del seguimiento por estadio basal"
+)
+
+# Distribución del tiempo según evento
+base_sup %>%
+  group_by(evento) %>%
+  summarise(
+    n = n(),
+    minimo = min(tiempo_seguimiento_dias),
+    mediana = median(tiempo_seguimiento_dias),
+    maximo = max(tiempo_seguimiento_dias),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    caption = "Tabla 2. Tiempo observado según presencia de evento"
+  )
+```
+
+# Análisis de Kaplan-Meier
+
+## Curvas de supervivencia según estadio basal
+
+Se estimaron curvas de Kaplan-Meier para describir la probabilidad de permanecer sin progresión renal durante el seguimiento, comparando los grupos G2–G3b y G4.
+
+```{r kaplan_meier, fig.width=10, fig.height=8}
+# Ajustar las curvas de Kaplan-Meier
+ajuste_km <- survival::survfit(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    evento
+  ) ~ estadio_modelo,
+  data = base_sup
+)
+
+# Generar gráfica
+grafico_km <- survminer::ggsurvplot(
+  ajuste_km,
+  data = base_sup,
+  risk.table = TRUE,
+  conf.int = FALSE,
+  pval = FALSE,
+  break.time.by = 180,
+  xlab = "Tiempo de seguimiento (días)",
+  ylab = "Probabilidad de permanecer sin progresión",
+  title = "Supervivencia libre de progresión renal",
+  legend.title = "Estadio basal",
+  legend.labs = c("G2–G3b", "G4"),
+  ggtheme = ggplot2::theme_minimal()
+)
+
+print(grafico_km)
+```
+Las curvas de Kaplan-Meier mostraron diferencias importantes en la probabilidad estimada de permanecer sin progresión renal entre los grupos de estadio basal. Los participantes clasificados en G2–G3b mantuvieron una probabilidad cercana al 100 % durante el seguimiento, mientras que aquellos en G4 presentaron una disminución progresiva y más pronunciada, alcanzando aproximadamente el 28 % al final de los 24 meses. Estos hallazgos son consistentes con la mayor frecuencia de eventos observada en G4. Sin embargo, las diferencias requieren evaluación estadística formal y deben interpretarse con cautela debido al escaso número de eventos en el grupo G2–G3b y a la presencia de observaciones censuradas.
+
+
+## Comparación de curvas mediante Log-rank
+
+Se utilizó la prueba de Log-rank para comparar las curvas de supervivencia libre de progresión entre G2–G3b y G4.
+
+```{r prueba_logrank}
+# Realizar prueba de Log-rank
+logrank <- survival::survdiff(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    evento
+  ) ~ estadio_modelo,
+  data = base_sup
+)
+
+# Mostrar resultados
+print(logrank)
+
+# Calcular valor p
+p_logrank <- pchisq(
+  logrank$chisq,
+  df = length(logrank$n) - 1,
+  lower.tail = FALSE
+)
+
+cat(
+  "\nValor p de Log-rank:",
+  format.pval(p_logrank, digits = 3, eps = 0.001),
+  "\n"
+)
+```
+La prueba de Log-rank mostró diferencias estadísticamente significativas entre las curvas de supervivencia libre de progresión renal de los grupos G2–G3b y G4 (χ² = 192; gl = 1; p < 0.001). Los participantes clasificados inicialmente en G4 presentaron una menor probabilidad estimada de permanecer sin progresión durante los 24 meses de seguimiento. Estos resultados son consistentes con la distribución observada de los eventos, de los cuales 32 ocurrieron en G4 y solamente uno en G2–G3b. No obstante, el reducido número de eventos en el grupo de referencia limita la precisión de las comparaciones y requiere cautela en la interpretación de los modelos posteriores.
+
+
+# Modelo de regresión de Cox
+
+## Modelo de Cox crudo
+
+Se estimó un modelo de riesgos proporcionales de Cox para evaluar la asociación entre el estadio basal agrupado y el tiempo hasta la progresión renal, utilizando G2–G3b como categoría de referencia.
+
+```{r modelo_cox_crudo}
+# Ajustar modelo de Cox crudo
+modelo_cox_crudo <- survival::coxph(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    evento
+  ) ~ estadio_modelo,
+  data = base_sup,
+  ties = "efron"
+)
+
+# Mostrar resumen del modelo
+summary(modelo_cox_crudo)
+
+# Generar tabla de resultados
+gtsummary::tbl_regression(
+  modelo_cox_crudo,
+  exponentiate = TRUE,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC"
+  )
+) %>%
+  gtsummary::bold_labels() %>%
+  gtsummary::modify_caption(
+    "**Tabla 3. Modelo de Cox crudo para progresión renal**"
+  )
+```
+El modelo de riesgos proporcionales de Cox crudo mostró una asociación estadísticamente significativa entre el estadio basal de enfermedad renal crónica y el tiempo hasta la progresión a G5 o inicio de terapia de reemplazo renal. Los participantes clasificados en G4 presentaron una tasa instantánea estimada de progresión considerablemente mayor que aquellos agrupados en G2–G3b (HR = 208; IC del 95 %: 28.4–1,524; p < 0.001). Sin embargo, el intervalo de confianza extremadamente amplio refleja una precisión limitada, relacionada con la distribución desigual de los eventos y la presencia de un único evento en el grupo de referencia. Por tanto, la magnitud del HR debe interpretarse con cautela. Asimismo, será necesario verificar el supuesto de riesgos proporcionales antes de considerar definitivas las conclusiones del modelo.
+
+
+## Modelo de Cox ajustado
+
+Se estimó un modelo de Cox ajustado por edad y log-proteinuria basal para evaluar la asociación entre el estadio inicial de ERC y el tiempo hasta la progresión renal.
+
+Debido al número limitado de eventos, se seleccionó un conjunto reducido de covariables clínicamente relevantes.
+
+```{r modelo_cox_ajustado}
+# Seleccionar participantes con datos completos
+base_sup_aj <- base_sup %>%
+  filter(
+    !is.na(edad),
+    !is.na(log_proteinuria_basal)
+  )
+
+# Ajustar modelo de Cox
+modelo_cox_ajustado <- survival::coxph(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    evento
+  ) ~ estadio_modelo +
+    edad +
+    log_proteinuria_basal,
+  data = base_sup_aj,
+  ties = "efron"
+)
+
+# Verificar muestra y eventos
+cat("Participantes:",
+    nobs(modelo_cox_ajustado), "\n")
+
+cat("Eventos:",
+    sum(base_sup_aj$evento), "\n")
+
+# Resumen del modelo
+summary(modelo_cox_ajustado)
+
+# Tabla de HR ajustados
+gtsummary::tbl_regression(
+  modelo_cox_ajustado,
+  exponentiate = TRUE,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC",
+    edad ~ "Edad (por año)",
+    log_proteinuria_basal ~ "Log-proteinuria basal"
+  )
+) %>%
+  gtsummary::bold_labels() %>%
+  gtsummary::modify_caption(
+    "**Tabla 4. Modelo de Cox ajustado para progresión renal**"
+  )
+```
+
+El modelo de riesgos proporcionales de Cox ajustado por edad y log-proteinuria basal mostró una asociación estadísticamente significativa entre el estadio G4 y el tiempo hasta la progresión a G5 o inicio de terapia de reemplazo renal (HR ajustado = 209; IC del 95 %: 28.4–1,530; p < 0.001). La estimación fue prácticamente equivalente a la obtenida en el modelo crudo (HR = 208), lo que indica que el ajuste por las covariables seleccionadas tuvo una influencia limitada sobre el estimador puntual. La edad y la log-proteinuria basal no mostraron asociaciones estadísticamente significativas. Sin embargo, la amplitud del intervalo de confianza y el escaso número de eventos en el grupo de referencia evidencian una precisión limitada. Por tanto, los resultados deben interpretarse con cautela y considerando las limitaciones de estabilidad del modelo.
+
+
+# Verificación de supuestos del modelo de Cox
+
+## Supuesto de riesgos proporcionales
+
+Se evaluó el supuesto de riesgos proporcionales mediante los residuos de Schoenfeld del modelo de Cox ajustado.
+
+```{r supuesto_riesgos_proporcionales}
+# Evaluar el supuesto
+ph_cox <- survival::cox.zph(
+  modelo_cox_ajustado
+)
+
+# Mostrar resultados
+print(ph_cox)
+```
+
+
+La evaluación del supuesto de riesgos proporcionales mediante los residuos de Schoenfeld no mostró evidencia estadísticamente significativa de incumplimiento en el modelo de Cox ajustado (prueba global: χ² = 3.43; gl = 3; p = 0.330). Los valores p individuales fueron 0.883 para el estadio basal agrupado, 0.380 para la edad y 0.092 para la log-proteinuria basal. Estos resultados no sugieren desviaciones estadísticamente significativas del supuesto durante el seguimiento. Sin embargo, debido al número limitado de eventos y su distribución desigual entre los grupos, la capacidad de la prueba para identificar incumplimientos podría estar reducida. Por esta razón, los resultados se complementarán
+
+
+## Evaluación gráfica de los riesgos proporcionales
+
+Se examinaron los residuos de Schoenfeld para evaluar posibles cambios en los efectos de las covariables durante el seguimiento.
+
+```{r graficos_schoenfeld, fig.width=12, fig.height=5}
+par(mfrow = c(1, 3))
+
+plot(
+  ph_cox,
+  var = "estadio_modelo",
+  main = "Estadio basal"
+)
+
+plot(
+  ph_cox,
+  var = "edad",
+  main = "Edad"
+)
+
+plot(
+  ph_cox,
+  var = "log_proteinuria_basal",
+  main = "Log-proteinuria"
+)
+
+par(mfrow = c(1, 1))
+```
+La evaluación gráfica de los residuos de Schoenfeld mostró un comportamiento relativamente estable de los efectos estimados para el estadio basal y la edad, sin identificar tendencias temporales pronunciadas. En el caso de la log-proteinuria basal, se observó una ligera tendencia ascendente, aunque con incertidumbre considerable. Estos hallazgos fueron consistentes con la prueba global de Schoenfeld (p = 0.330), que no identificó evidencia estadísticamente significativa de incumplimiento del supuesto de riesgos proporcionales. Sin embargo, debido al número limitado de eventos de progresión y su distribución desigual entre los grupos, los resultados deben interpretarse con cautela, ya que no permiten descartar completamente posibles variaciones temporales de los efectos.
+
+# Conclusiones del análisis de supervivencia
+
+El análisis de Kaplan-Meier mostró una menor probabilidad estimada de permanecer sin progresión renal en los participantes clasificados inicialmente en G4, en comparación con aquellos en G2–G3b. La prueba de Log-rank identificó diferencias estadísticamente significativas entre las curvas (p < 0.001).
+
+El modelo de Cox ajustado por edad y log-proteinuria basal mostró una asociación estadísticamente significativa entre el estadio G4 y el tiempo hasta la progresión renal (HR ajustado = 209; IC del 95 %: 28.4–1,530; p < 0.001).
+
+La evaluación mediante residuos de Schoenfeld no identificó evidencia estadísticamente significativa de incumplimiento del supuesto de riesgos proporcionales. Sin embargo, la estimación del HR presentó un intervalo de confianza extremadamente amplio.
+
+Como principal limitación, se identificaron únicamente 33 eventos, de los cuales 32 ocurrieron en G4 y uno en G2–G3b. Esta distribución puede producir estimaciones inestables. Además, la agrupación de estadios reduce la capacidad para distinguir el gradiente clínico de gravedad de la enfermedad renal.
+
+Por estas razones, los resultados deben interpretarse como asociaciones observacionales, sin establecer relaciones causales.
+
+# Información de sesión
+
+```{r informacion_sesion}
+sessionInfo()
+```
