@@ -1,0 +1,853 @@
+
+---
+title: "Validación crítica de los análisis estadísticos — Cohorte ERC"
+subtitle: "Seminario de Epidemiología II — Semana 15"
+author: "Ana Sofía Gramajo"
+date: "Noviembre 2026"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(here)
+library(survival)
+library(car)
+library(lmtest)
+library(ResourceSelection)
+library(gtsummary)
+library(broom)
+```
+
+# Introducción
+
+El objetivo de este reporte es realizar una validación crítica de los análisis estadísticos desarrollados durante la semana 14 en una cohorte sintética de pacientes con enfermedad renal crónica (ERC).
+
+Se evaluará la coherencia entre la pregunta de investigación y los modelos implementados, el cumplimiento de los supuestos estadísticos, la consistencia de los resultados y su plausibilidad clínica.
+
+Los análisis incluyen regresión logística, regresión lineal múltiple y regresión de riesgos proporcionales de Cox.
+
+# Preparación de datos
+
+## Carga y verificación de la base analítica
+
+```{r cargar_base}
+# Cargar la base analítica
+base <- readRDS(
+  here("data", "processed",
+       "base_analitica_v1.0.rds")
+)
+
+# Verificar dimensiones
+cat("Participantes:", nrow(base), "\n")
+cat("Variables:", ncol(base), "\n")
+
+# Verificar eventos
+cat(
+  "Eventos de progresión:",
+  sum(base$progresion_g5_o_trr, na.rm = TRUE),
+  "\n"
+)
+
+# Verificar agrupación de estadio
+table(base$estadio_modelo, useNA = "ifany")
+```
+
+
+# Coherencia entre pregunta de investigación y análisis
+
+Se evaluó la correspondencia entre la pregunta de investigación, los desenlaces, los modelos estadísticos y las covariables utilizadas durante la semana 14.
+
+```{r coherencia_analisis}
+verificaciones <- tibble(
+  Verificacion = c(
+    "Coherencia del desenlace",
+    "Tipo de modelo estadístico",
+    "Codificación del estadio basal",
+    "Selección de covariables",
+    "Tamaño de muestra analítica",
+    "Número de eventos por parámetro",
+    "Definición del tiempo de seguimiento"
+  ),
+
+  Estado = c(
+    "OK",
+    "OK",
+    "OK con limitaciones",
+    "OK con limitaciones",
+    "Revisar",
+    "Revisar",
+    "Pendiente de verificación"
+  ),
+
+  Observaciones = c(
+    "Se evaluó progresión a G5/TRR, cambio anual de TFG y tiempo hasta progresión.",
+
+    "Se utilizaron modelos logísticos, lineales y de Cox, según el tipo de desenlace.",
+
+    "Se agruparon G2-G3b frente a G4 en logística y Cox. En regresión lineal se conservaron los cuatro estadios.",
+
+    "En logística y Cox se ajustó por edad y log-proteinuria basal. Se seleccionaron pocas covariables por los eventos escasos.",
+
+    "La cohorte incluyó 300 participantes. El modelo lineal utilizó 246. Se verificará el N de cada modelo.",
+
+    "Se registraron 33 eventos. Los modelos logístico y de Cox ajustados incluyeron tres parámetros predictivos, pero solo hubo un evento en G2-G3b.",
+
+    "Dos participantes registraron progresión y pérdida de seguimiento. No se ha confirmado la secuencia temporal."
+  )
+)
+
+knitr::kable(
+  verificaciones,
+  caption = "Tabla 1. Coherencia entre pregunta y análisis"
+)
+```
+
+# Validación de supuestos estadísticos
+
+## Regresión logística
+
+### Multicolinealidad
+
+Se evaluó la multicolinealidad mediante el factor de inflación de la varianza (VIF). Se utilizó el modelo ajustado de la semana 14, incluyendo estadio basal agrupado, edad y log-proteinuria basal.
+
+```{r vif_logistica}
+# Preparar la base del modelo
+base_log_15 <- base %>%
+  filter(
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_modelo),
+    !is.na(edad),
+    !is.na(log_proteinuria_basal)
+  ) %>%
+  mutate(
+    estadio_modelo = factor(
+      as.character(estadio_modelo),
+      levels = c("G2-G3b", "G4")
+    )
+  )
+
+# Reajustar el modelo de la semana 14
+modelo_log_15 <- glm(
+  progresion_g5_o_trr ~ estadio_modelo +
+    edad + log_proteinuria_basal,
+  data = base_log_15,
+  family = binomial(link = "logit")
+)
+
+# Verificar participantes y eventos
+cat("Participantes:", nobs(modelo_log_15), "\n")
+cat("Eventos:", sum(base_log_15$progresion_g5_o_trr), "\n")
+
+# Calcular VIF
+vif_log <- car::vif(modelo_log_15)
+
+# Presentar tabla
+tabla_vif <- data.frame(
+  Variable = names(vif_log),
+  VIF = round(as.numeric(vif_log), 2)
+)
+
+knitr::kable(
+  tabla_vif,
+  caption = "Tabla 2. Multicolinealidad del modelo logístico"
+)
+```
+La evaluación de multicolinealidad mediante el factor de inflación de la varianza (VIF) mostró valores cercanos a 1 para las tres variables explicativas incluidas en el modelo de regresión logística ajustado: estadio basal agrupado, edad y log-proteinuria basal. Estos resultados no evidencian problemas relevantes de multicolinealidad, lo que favorece la interpretación individual de los coeficientes. Sin embargo, la ausencia de multicolinealidad no garantiza la estabilidad de las estimaciones, especialmente considerando el reducido número de eventos en el grupo de referencia.
+
+### Bondad de ajuste: prueba de Hosmer-Lemeshow
+
+Se evaluó la bondad de ajuste del modelo logístico mediante la prueba de Hosmer-Lemeshow, comparando los eventos observados con las probabilidades estimadas.
+
+```{r hosmer_lemeshow}
+# Realizar prueba de Hosmer-Lemeshow
+hl_test <- ResourceSelection::hoslem.test(
+  x = as.integer(base_log_15$progresion_g5_o_trr),
+  y = fitted(modelo_log_15),
+  g = 10
+)
+
+# Mostrar resultados
+print(hl_test)
+
+# Mostrar valor p
+cat(
+  "Valor p:",
+  round(hl_test$p.value, 4),
+  "\n"
+)
+```
+
+La evaluación de bondad de ajuste mediante la prueba de Hosmer-Lemeshow no identificó evidencia estadísticamente significativa de falta de ajuste del modelo de regresión logística (χ² = 6.38; gl = 8; p = 0.605). Este resultado fue consistente con el obtenido durante el análisis de la semana 14. No obstante, considerando el número limitado de eventos de progresión y su distribución desigual entre los estadios, la prueba podría presentar una capacidad reducida para identificar problemas de calibración. Por tanto, este hallazgo debe interpretarse junto con las demás verificaciones del modelo.
+
+
+### Linealidad de las variables continuas en la escala logit
+
+Se examinó la forma funcional de la edad y la log-proteinuria basal mediante gráficos de componentes y residuos parciales, con el propósito de explorar posibles desviaciones de la linealidad.
+
+```{r linealidad_logit, fig.width=11, fig.height=5}
+car::crPlots(
+  modelo_log_15,
+  terms = ~ edad + log_proteinuria_basal,
+  layout = c(1, 2),
+  ask = FALSE
+)
+```
+
+### Revisión de residuos extremos
+
+Se examinaron las observaciones con mayores residuos de trabajo para identificar posibles problemas de estabilidad del modelo logístico.
+
+```{r revision_residuos_logisticos}
+diagnostico_log <- base_log_15 %>%
+  mutate(
+    probabilidad_estimada = fitted(modelo_log_15),
+    residuo_trabajo = residuals(
+      modelo_log_15,
+      type = "working"
+    )
+  ) %>%
+  arrange(desc(abs(residuo_trabajo))) %>%
+  select(
+    id_estudio,
+    estadio_modelo,
+    edad,
+    log_proteinuria_basal,
+    progresion_g5_o_trr,
+    probabilidad_estimada,
+    residuo_trabajo
+  )
+
+knitr::kable(
+  head(diagnostico_log, 5),
+  digits = 4,
+  caption = "Observaciones con mayores residuos del modelo logístico"
+)
+```
+La revisión de los residuos del modelo logístico permitió identificar una observación extrema correspondiente al participante ERC-0112, clasificado en el grupo G2–G3b. Aunque el modelo estimó una probabilidad de progresión de 0.45 %, este participante presentó el evento, generando un residuo de trabajo de 223.27. Este hallazgo es consistente con la escasa frecuencia de progresión observada en el grupo de referencia, donde únicamente se registró un evento entre 247 participantes. La presencia de esta observación dificulta la interpretación visual de los gráficos de componentes y residuos parciales, por lo que no es posible establecer de manera concluyente el cumplimiento del supuesto de linealidad en la escala logit a partir de estas gráficas. Se considera necesario complementar la evaluación con medidas de influencia y mantener cautela en la interpretación de las estimaciones.
+
+
+### Evaluación de observaciones influyentes
+
+Se calcularon las distancias de Cook y los residuos de desviación para identificar observaciones potencialmente influyentes en el modelo logístico.
+
+```{r influencia_logistica}
+diagnostico_influencia <- base_log_15 %>%
+  mutate(
+    distancia_cook = as.numeric(
+      cooks.distance(modelo_log_15)
+    ),
+    residuo_desviacion = as.numeric(
+      residuals(modelo_log_15, type = "deviance")
+    ),
+    leverage = as.numeric(
+      hatvalues(modelo_log_15)
+    )
+  ) %>%
+  arrange(desc(distancia_cook)) %>%
+  select(
+    id_estudio,
+    estadio_modelo,
+    progresion_g5_o_trr,
+    distancia_cook,
+    residuo_desviacion,
+    leverage
+  )
+
+knitr::kable(
+  head(diagnostico_influencia, 5),
+  digits = 4,
+  caption = "Observaciones potencialmente influyentes del modelo logístico"
+)
+```
+La evaluación de observaciones influyentes mediante la distancia de Cook identificó al participante ERC-0112 como la observación con mayor influencia potencial sobre las estimaciones del modelo logístico (distancia de Cook = 0.2942). Este participante presentó un residuo de desviación de 3.2889 y un valor de leverage de 0.0052. El hallazgo es relevante porque corresponde al único evento de progresión observado en el grupo G2–G3b. Su presencia podría contribuir a la inestabilidad de los coeficientes y a la amplitud de los intervalos de confianza. Sin embargo, no se identificó evidencia suficiente para justificar su exclusión. Por tanto, se decidió conservar el registro en el análisis principal y documentar su influencia potencial como una limitación metodológica. La evaluación de linealidad en la escala logit permanece limitada por la presencia de esta observación extrema.
+
+## Regresión lineal múltiple
+
+### Evaluación gráfica de los supuestos
+
+Se evaluaron los supuestos del modelo de regresión lineal múltiple utilizado para analizar los factores basales asociados con la tasa anual de cambio de la TFG.
+
+```{r diagnosticos_lineal, fig.width=11, fig.height=8}
+# Preparar base para regresión lineal
+base_lineal_15 <- base %>%
+  filter(
+    !is.na(tasa_declive_tfg),
+    !is.na(log_proteinuria_basal)
+  )
+
+# Establecer G2 como categoría de referencia
+base_lineal_15 <- base_lineal_15 %>%
+  mutate(
+    estadio_basal = factor(
+      as.character(estadio_basal),
+      levels = c("G2", "G3a", "G3b", "G4"),
+      ordered = FALSE
+    )
+  )
+
+# Reajustar el modelo de la semana 14
+modelo_lineal_15 <- lm(
+  tasa_declive_tfg ~ estadio_basal +
+    edad + sexo + diabetes +
+    hipertension + log_proteinuria_basal +
+    hemoglobina_g_dl_basal +
+    pas_mmhg_basal + ieca_o_ara2,
+  data = base_lineal_15
+)
+
+# Verificar participantes
+cat("Participantes:", nobs(modelo_lineal_15), "\n")
+
+# Gráficos diagnósticos
+par(mfrow = c(2, 2))
+
+plot(modelo_lineal_15)
+
+par(mfrow = c(1, 1))
+```
+La evaluación gráfica de los supuestos del modelo de regresión lineal múltiple, realizada con 246 participantes, mostró una distribución de los residuos alrededor de cero, aunque con una ligera curvatura en el gráfico de residuos frente a valores ajustados. El gráfico Q-Q evidenció una distribución aproximadamente normal de los residuos, con pequeñas desviaciones en los extremos. Por su parte, el gráfico Scale-Location mostró variaciones moderadas en la dispersión, por lo que no puede descartarse la presencia de heterocedasticidad. Finalmente, se observaron algunas observaciones potencialmente influyentes que requieren consideración en la interpretación del modelo. En conjunto, los gráficos no evidencian desviaciones graves, aunque justifican realizar pruebas formales complementarias.
+
+
+### Evaluación formal de los supuestos
+
+Se realizaron pruebas estadísticas complementarias para evaluar la homocedasticidad, normalidad de los residuos y multicolinealidad del modelo lineal.
+
+```{r pruebas_formales_lineal}
+# 1. Prueba de Breusch-Pagan
+bp <- lmtest::bptest(modelo_lineal_15)
+
+cat("=== BREUSCH-PAGAN ===\n")
+cat("Estadístico BP:",
+    round(as.numeric(bp$statistic), 3), "\n")
+cat("Valor p:",
+    round(bp$p.value, 4), "\n\n")
+
+# 2. Prueba de Shapiro-Wilk
+residuos <- residuals(modelo_lineal_15)
+
+sw <- shapiro.test(residuos)
+
+cat("=== SHAPIRO-WILK ===\n")
+cat("Estadístico W:",
+    round(as.numeric(sw$statistic), 4), "\n")
+cat("Valor p:",
+    round(sw$p.value, 4), "\n\n")
+
+# 3. Multicolinealidad
+vif_lineal <- car::vif(modelo_lineal_15)
+
+cat("=== MULTICOLINEALIDAD ===\n")
+print(round(vif_lineal, 2))
+```
+
+La evaluación formal de los supuestos del modelo de regresión lineal múltiple no identificó evidencia estadísticamente significativa de heterocedasticidad mediante la prueba de Breusch-Pagan (BP = 9.043; p = 0.6179). Asimismo, la prueba de Shapiro-Wilk no mostró evidencia contra la normalidad de los residuos (W = 0.9983; p = 0.9968), resultado consistente con la distribución aproximadamente normal observada en el gráfico Q-Q. Por otra parte, los valores del factor de inflación de la varianza y del GVIF ajustado fueron cercanos a 1, sin indicios relevantes de multicolinealidad. En conjunto, las pruebas formales no identificaron incumplimientos importantes de los supuestos evaluados. Sin embargo, se mantienen algunas consideraciones derivadas de los diagnósticos gráficos y de la presencia de observaciones potencialmente influyentes, por lo que los resultados deben interpretarse considerando estas limitaciones.
+
+
+## Modelo de Cox
+
+### Evaluación del supuesto de riesgos proporcionales
+
+Se evaluó el supuesto de riesgos proporcionales mediante los residuos de Schoenfeld. Se utilizó la misma especificación del modelo ajustado de la semana 14, incluyendo estadio basal agrupado, edad y log-proteinuria basal.
+
+```{r validacion_cox}
+# Preparar base del modelo de Cox
+base_cox_15 <- base %>%
+  filter(
+    !is.na(tiempo_seguimiento_dias),
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_modelo),
+    !is.na(edad),
+    !is.na(log_proteinuria_basal)
+  ) %>%
+  mutate(
+    estadio_modelo = factor(
+      as.character(estadio_modelo),
+      levels = c("G2-G3b", "G4")
+    )
+  )
+
+# Reajustar modelo de Cox
+modelo_cox_15 <- survival::coxph(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    progresion_g5_o_trr
+  ) ~ estadio_modelo +
+    edad +
+    log_proteinuria_basal,
+  data = base_cox_15,
+  ties = "efron"
+)
+
+# Verificar muestra
+cat("Participantes:",
+    nobs(modelo_cox_15), "\n")
+
+cat("Eventos:",
+    modelo_cox_15$nevent, "\n")
+
+# Prueba de Schoenfeld
+ph_test_15 <- survival::cox.zph(
+  modelo_cox_15
+)
+
+print(ph_test_15)
+```
+
+
+### Resultados de la prueba de Schoenfeld
+
+```{r tabla_schoenfeld}
+# Tabla de resultados
+tabla_ph <- as.data.frame(ph_test_15$table) %>%
+  tibble::rownames_to_column("Variable") %>%
+  mutate(
+    Chi2 = round(chisq, 3),
+    Valor_p = round(p, 4),
+    Evaluacion = ifelse(
+      p < 0.05,
+      "Posible incumplimiento",
+      "Sin evidencia de incumplimiento"
+    )
+  ) %>%
+  select(Variable, Chi2, Valor_p, Evaluacion)
+
+knitr::kable(
+  tabla_ph,
+  caption = "Tabla. Evaluación del supuesto de riesgos proporcionales"
+)
+```
+
+### Evaluación gráfica de Schoenfeld
+
+```{r grafico_schoenfeld_15, fig.width=11, fig.height=7}
+survminer::ggcoxzph(ph_test_15)
+```
+
+La evaluación del supuesto de riesgos proporcionales mediante los residuos de Schoenfeld no identificó evidencia estadísticamente significativa de incumplimiento en el modelo de Cox ajustado (prueba global: χ² = 3.43; gl = 3; p = 0.330). Los valores p individuales fueron 0.8833 para el estadio basal agrupado, 0.3802 para la edad y 0.0917 para la log-proteinuria basal. La evaluación gráfica mostró un comportamiento relativamente estable para el estadio basal y la edad, mientras que la log-proteinuria presentó una ligera tendencia ascendente, sin alcanzar significación estadística. Estos resultados fueron consistentes con los obtenidos durante la semana 14. Sin embargo, debido al número limitado de eventos y su distribución desigual entre los grupos, la capacidad para identificar posibles incumplimientos podría estar reducida. Asimismo, permanece pendiente la aclaración de la coherencia temporal de dos registros con progresión y pérdida de seguimiento, por lo que los resultados de supervivencia deben interpretarse de manera provisional.
+
+
+# Coherencia entre modelos
+
+## Comparación entre OR y HR
+
+Se compararon las estimaciones del modelo de regresión logística ajustado y del modelo de Cox ajustado para el estadio basal G4, utilizando G2-G3b como categoría de referencia.
+
+```{r comparacion_or_hr}
+# Extraer resultados de regresión logística
+resultado_log <- broom::tidy(
+  modelo_log_15,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_modeloG4") %>%
+  transmute(
+    Variable = "G4 frente a G2-G3b",
+    OR = estimate,
+    OR_inferior = conf.low,
+    OR_superior = conf.high
+  )
+
+# Extraer resultados del modelo de Cox
+resultado_cox <- broom::tidy(
+  modelo_cox_15,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_modeloG4") %>%
+  transmute(
+    Variable = "G4 frente a G2-G3b",
+    HR = estimate,
+    HR_inferior = conf.low,
+    HR_superior = conf.high
+  )
+
+# Combinar resultados
+comparacion <- left_join(
+  resultado_log,
+  resultado_cox,
+  by = "Variable"
+)
+
+# Mostrar tabla
+knitr::kable(
+  comparacion,
+  digits = 2,
+  caption = "Comparación entre OR y HR ajustados"
+)
+```
+
+La comparación entre los modelos de regresión logística y de riesgos proporcionales de Cox mostró resultados consistentes en cuanto a la dirección de la asociación entre el estadio basal G4 y la progresión renal. El modelo logístico ajustado presentó un OR de 379.52 (IC del 95 %: 75.50–6,934.06), mientras que el modelo de Cox ajustado mostró un HR de 208.61 (IC del 95 %: 28.45–1,529.81). Aunque ambas estimaciones indican una asociación positiva de gran magnitud, las diferencias se explican parcialmente porque representan medidas distintas: el OR compara las odds de progresión, mientras que el HR considera las tasas instantáneas de ocurrencia del evento durante el seguimiento. La elevada frecuencia de progresión en G4, en contraste con el único evento registrado en G2–G3b, contribuye a la magnitud de las asociaciones y a la amplitud de los intervalos de confianza. Por tanto, los resultados muestran coherencia en su dirección, pero requieren una interpretación cautelosa debido a la escasez de eventos en el grupo de referencia y a las limitaciones pendientes de verificación de los tiempos de seguimiento.
+
+
+## Coherencia con el análisis descriptivo
+
+Se evaluó la frecuencia observada de progresión renal según los cuatro estadios basales originales para comprobar su coherencia con las asociaciones estimadas en los modelos estadísticos.
+
+```{r coherencia_descriptivo}
+tasa_descriptivo <- base %>%
+  group_by(estadio_basal) %>%
+  summarise(
+    participantes = n(),
+    eventos = sum(progresion_g5_o_trr, na.rm = TRUE),
+    porcentaje = round(
+      mean(progresion_g5_o_trr, na.rm = TRUE) * 100,
+      1
+    ),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  tasa_descriptivo,
+  caption = "Tabla. Progresión renal según estadio basal"
+)
+```
+
+El análisis descriptivo de la progresión renal según el estadio basal mostró diferencias importantes en la frecuencia de eventos. No se registraron eventos de progresión en los participantes clasificados inicialmente en G2 y G3a, mientras que en G3b se identificó un evento entre 85 participantes (1.2 %). En contraste, el estadio G4 presentó 32 eventos entre 53 participantes (60.4 %). Estos hallazgos muestran coherencia con la dirección de las asociaciones obtenidas mediante regresión logística y regresión de Cox, en los que el estadio G4 presentó estimaciones considerablemente elevadas. Sin embargo, la concentración de eventos en este grupo y la escasa frecuencia de progresión en los estadios menos avanzados contribuyen a la limitada precisión de las estimaciones. Por tanto, aunque existe coherencia entre los resultados descriptivos y los modelos estadísticos, la magnitud de las asociaciones genera una considerable incertidumbre, reflejada en la amplitud de los intervalos de confianza.
+
+
+# Análisis de sensibilidad
+
+## Sensibilidad 1: exclusión del valor extremo de creatinina
+
+Se realizó un análisis de sensibilidad excluyendo temporalmente las observaciones con creatinina basal superior a 15 mg/dL. Se compararon las estimaciones del modelo logístico principal con las del modelo alternativo, manteniendo la misma especificación de covariables.
+
+
+
+```{r sensibilidad_creatinina}
+# Crear base para sensibilidad 1
+
+base_log_s1 <- base_log_15 %>%
+  filter(
+    is.na(creatinina_mg_dl_basal) |
+      creatinina_mg_dl_basal <= 15
+  )
+
+# Reajustar modelo logístico
+
+modelo_log_s1 <- update(
+  modelo_log_15,
+  data = base_log_s1
+)
+
+# Verificar participantes y eventos
+
+cat("N modelo principal:",
+    nobs(modelo_log_15), "\n")
+
+cat("N sensibilidad:",
+    nobs(modelo_log_s1), "\n")
+
+cat("Eventos sensibilidad:",
+    sum(base_log_s1$progresion_g5_o_trr),
+    "\n")
+
+# Comparar OR de ambos modelos
+
+comparacion_s1 <- tibble(
+  Variable = names(coef(modelo_log_15)),
+  OR_principal = exp(coef(modelo_log_15)),
+  OR_sensibilidad = exp(coef(modelo_log_s1))
+) %>%
+  mutate(
+    Diferencia_pct = round(
+      abs(OR_sensibilidad - OR_principal) /
+        OR_principal * 100,
+      1
+    )
+  )
+
+knitr::kable(
+  comparacion_s1,
+  digits = 3,
+  caption = "Comparación de modelos: sensibilidad por creatinina"
+)
+```
+
+
+
+## Sensibilidad 2: registros con incertidumbre temporal
+
+Se realizó un análisis exploratorio de sensibilidad mediante la exclusión temporal de dos participantes que presentaron progresión renal y pérdida de seguimiento, cuya secuencia temporal no pudo confirmarse con la documentación disponible.
+
+El objetivo fue evaluar si estos registros modifican las estimaciones de asociación entre el estadio basal de enfermedad renal crónica y el tiempo hasta la progresión renal.
+
+```{r sensibilidad_cox_2}
+# 1. Crear base para el análisis de sensibilidad
+
+base_cox_s2 <- base_cox_15 %>%
+  filter(
+    !id_estudio %in% c("ERC-0162", "ERC-0268")
+  )
+
+# 2. Reajustar el mismo modelo de Cox
+
+modelo_cox_s2 <- survival::coxph(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    progresion_g5_o_trr
+  ) ~ estadio_modelo +
+    edad +
+    log_proteinuria_basal,
+  data = base_cox_s2,
+  ties = "efron"
+)
+
+# 3. Comparar participantes y eventos
+
+cat("Participantes modelo principal:",
+    modelo_cox_15$n, "\n")
+
+cat("Participantes sensibilidad:",
+    modelo_cox_s2$n, "\n")
+
+cat("Eventos modelo principal:",
+    modelo_cox_15$nevent, "\n")
+
+cat("Eventos sensibilidad:",
+    modelo_cox_s2$nevent, "\n")
+
+# 4. Extraer resultados del modelo principal
+
+hr_principal <- broom::tidy(
+  modelo_cox_15,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_modeloG4")
+
+# 5. Extraer resultados del modelo de sensibilidad
+
+hr_sensibilidad <- broom::tidy(
+  modelo_cox_s2,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_modeloG4")
+
+# 6. Construir tabla comparativa
+
+comparacion_s2 <- tibble(
+  Modelo = c("Principal", "Sensibilidad"),
+  Participantes = c(
+    modelo_cox_15$n,
+    modelo_cox_s2$n
+  ),
+  Eventos = c(
+    modelo_cox_15$nevent,
+    modelo_cox_s2$nevent
+  ),
+  HR = c(
+    hr_principal$estimate,
+    hr_sensibilidad$estimate
+  ),
+  IC_inferior = c(
+    hr_principal$conf.low,
+    hr_sensibilidad$conf.low
+  ),
+  IC_superior = c(
+    hr_principal$conf.high,
+    hr_sensibilidad$conf.high
+  )
+)
+
+# 7. Mostrar tabla
+
+knitr::kable(
+  comparacion_s2,
+  digits = 2,
+  caption = "Tabla. Análisis de sensibilidad del modelo de Cox"
+)
+
+# 8. Calcular diferencia relativa entre HR
+
+diferencia_hr <- (
+  (hr_sensibilidad$estimate -
+     hr_principal$estimate) /
+    hr_principal$estimate
+) * 100
+
+cat(
+  "\nDiferencia relativa del HR:",
+  round(diferencia_hr, 2),
+  "%\n"
+)
+```
+
+El segundo análisis de sensibilidad evaluó la influencia de dos registros con incertidumbre sobre la secuencia temporal entre la progresión renal y la pérdida de seguimiento. La exclusión temporal de estos participantes redujo la muestra de 300 a 298 personas y el número de eventos de 33 a 31. El HR ajustado para el estadio G4 disminuyó de 208.61 (IC del 95 %: 28.45–1,529.81) a 201.06 (IC del 95 %: 27.37–1,477.15), lo que representa una diferencia relativa de −3.62 %. La dirección de la asociación se mantuvo y la magnitud del estimador presentó una variación limitada. Estos resultados sugieren que la exclusión de los dos registros no modifica sustancialmente la estimación principal. Sin embargo, la amplitud de los intervalos de confianza refleja una precisión limitada y el análisis no permite resolver la incertidumbre sobre la validez temporal de dichos registros.
+
+
+# Evaluación de plausibilidad clínica
+
+Se evaluó la plausibilidad clínica de los resultados obtenidos mediante regresión logística, regresión lineal múltiple y regresión de Cox. Se consideraron la dirección y magnitud de las asociaciones, la coherencia entre modelos y los hallazgos que requieren explicaciones adicionales.
+
+## Resumen de las asociaciones principales
+
+```{r tabla_plausibilidad}
+# Regresión logística
+resultado_log <- broom::tidy(
+  modelo_log_15,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_modeloG4") %>%
+  transmute(
+    Modelo = "Regresión logística",
+    Medida = "OR",
+    Estimacion = estimate,
+    IC_inferior = conf.low,
+    IC_superior = conf.high
+  )
+
+broom::tidy(modelo_lineal_15) %>%
+  dplyr::mutate(
+    term = dplyr::recode(
+      term,
+      "diabetesTRUE" = "Diabetes mellitus: Sí",
+      "hipertensionTRUE" = "Hipertensión arterial: Sí",
+      "ieca_o_ara2TRUE" = "Uso de IECA o ARA2: Sí",
+      "sexoMasculino" = "Sexo: Masculino"
+    )
+  ) %>%
+  dplyr::select(
+    Variable = term,
+    Beta = estimate
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Coeficientes del modelo de regresión lineal"
+  )
+
+# Regresión lineal
+resultado_lineal <- broom::tidy(
+  modelo_lineal_15,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_basalG4") %>%
+  transmute(
+    Modelo = "Regresión lineal",
+    Medida = "Beta",
+    Estimacion = estimate,
+    IC_inferior = conf.low,
+    IC_superior = conf.high
+  )
+
+# Modelo de Cox
+resultado_cox <- broom::tidy(
+  modelo_cox_15,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) %>%
+  filter(term == "estadio_modeloG4") %>%
+  transmute(
+    Modelo = "Regresión de Cox",
+    Medida = "HR",
+    Estimacion = estimate,
+    IC_inferior = conf.low,
+    IC_superior = conf.high
+  )
+
+# Tabla comparativa
+tabla_clinica <- bind_rows(
+  resultado_log,
+  resultado_lineal,
+  resultado_cox
+)
+
+knitr::kable(
+  tabla_clinica,
+  digits = 2,
+  caption = "Tabla. Asociaciones principales del estadio G4"
+)
+```
+## Interpretación de la plausibilidad clínica
+
+**Dirección de las asociaciones.** Los resultados muestran una relación entre el estadio basal de la enfermedad renal crónica y su progresión. Los participantes clasificados inicialmente en G4 presentaron una mayor frecuencia de progresión a G5 o inicio de terapia de reemplazo renal en comparación con aquellos clasificados en estadios menos avanzados. Asimismo, el modelo lineal identificó una disminución anual más pronunciada de la tasa de filtración glomerular en G4 respecto de G2. Estos hallazgos son clínicamente plausibles y compatibles con una mayor proximidad al desenlace de progresión en los participantes con función renal basal más deteriorada.
+
+**Magnitud de las asociaciones.** Los modelos de regresión logística y Cox presentaron asociaciones de gran magnitud para el estadio G4, con un OR ajustado de 379.52 y un HR ajustado de 208.61, respectivamente. Aunque estos resultados evidencian diferencias importantes entre los grupos, sus intervalos de confianza son considerablemente amplios, debido en parte a la escasa frecuencia de eventos en el grupo de referencia. En consecuencia, la dirección de la asociación está mejor sustentada que la precisión de su magnitud.
+
+**Coherencia interna.** Los tres modelos presentan resultados compatibles en cuanto al mayor deterioro renal observado en los participantes clasificados inicialmente en G4. La regresión logística identificó una mayor asociación con la ocurrencia de progresión, el modelo de Cox mostró una mayor tasa instantánea del evento y la regresión lineal evidenció una disminución anual más pronunciada de la TFG. Aunque los modelos evalúan desenlaces y escalas diferentes, sus resultados mantienen coherencia en la dirección de las asociaciones.
+
+**Hallazgos inesperados y limitaciones.** La concentración de 32 de los 33 eventos de progresión en el estadio G4 representa una característica relevante de la base analizada, que contribuye a las estimaciones elevadas y a su limitada precisión. Asimismo, el modelo lineal identificó asociaciones entre la presencia de diabetes, el uso de IECA o ARA2 y una disminución anual más pronunciada de la TFG. Estos hallazgos no permiten establecer relaciones causales y pueden estar influenciados por características clínicas iniciales, diferencias en el tratamiento y factores de confusión residuales. Finalmente, permanece pendiente la verificación de la secuencia temporal de dos registros con progresión renal y pérdida de seguimiento, aspecto que limita la validación definitiva de los análisis de supervivencia.
+
+
+# Problemas identificados y acciones tomadas
+
+Durante la validación crítica se identificaron aspectos metodológicos que requieren consideración para la interpretación de los resultados. La siguiente tabla resume los principales hallazgos, las decisiones adoptadas y los aspectos pendientes de verificación.
+
+```{r problemas_decisiones}
+tabla_decisiones <- tibble::tibble(
+  Problema = c(
+    "Distribución desigual de eventos",
+    "Estimaciones de asociación elevadas",
+    "Observación influyente en logística",
+    "Evaluación de supuestos estadísticos",
+    "Valor extremo de creatinina",
+    "Incertidumbre en tiempos de seguimiento"
+  ),
+
+Gravedad = c(
+  "Alta",
+  "Alta",
+  "Alta",
+  "Media",
+  "Baja",
+  "Alta"
+),
+
+  Accion = c(
+    "Se agruparon los estadios G2-G3b frente a G4 para los modelos de progresión.",
+    "Se compararon OR y HR ajustados, considerando sus intervalos de confianza.",
+    "Se evaluaron residuos y distancia de Cook. Se conservó el registro ERC-0112.",
+    "Se realizaron diagnósticos gráficos y pruebas formales de los modelos.",
+    "Se realizó un análisis de sensibilidad excluyendo temporalmente el registro extremo.",
+    "Se efectuó un análisis exploratorio excluyendo dos registros con incertidumbre temporal."
+  ),
+
+  Estado = c(
+    "Documentado",
+    "Documentado",
+    "Documentado",
+    "Evaluado",
+    "Evaluado",
+    "Pendiente de verificación"
+  )
+)
+
+knitr::kable(
+  tabla_decisiones,
+  caption = "Tabla. Problemas identificados y decisiones metodológicas"
+)
+```
+
+# Declaración de preparación para el análisis final
+
+La validación crítica permitió evaluar la coherencia entre la pregunta de investigación, los desenlaces y los modelos estadísticos implementados en la cohorte de pacientes con enfermedad renal crónica. Se revisaron los supuestos de regresión logística, regresión lineal múltiple y regresión de Cox, así como la consistencia de sus estimaciones y la plausibilidad clínica de los resultados.
+
+Los análisis mostraron coherencia en la dirección de las asociaciones, identificando al estadio basal G4 como el grupo con mayor frecuencia de progresión renal y una disminución anual más pronunciada de la tasa de filtrado glomerular. 
+
+Las pruebas formales no identificaron evidencia estadísticamente significativa de incumplimiento de los supuestos evaluados. Sin embargo, la valoración de la linealidad en la escala logit presentó limitaciones debido a una observación extrema. Asimismo, se identificaron aspectos relacionados con la distribución desigual de eventos, la presencia de observaciones potencialmente influyentes y la precisión de las estimaciones.
+
+Los dos análisis de sensibilidad mostraron que las asociaciones principales conservaron su dirección y presentaron variaciones relativas limitadas frente a las modificaciones analíticas evaluadas. Estos resultados aportan información sobre la estabilidad de las estimaciones, sin resolver las limitaciones identificadas.
+
+En conjunto, los modelos cuentan con resultados reproducibles y documentación de sus principales decisiones metodológicas. Sin embargo, antes de considerar definitivo el análisis de supervivencia, es necesario aclarar la secuencia temporal de dos registros con progresión renal y pérdida de seguimiento. Asimismo, la escasa frecuencia de eventos en el grupo de referencia continúa limitando la precisión de las asociaciones estimadas.
+
+
+# Información de sesión
+
+Se presenta la información del entorno de R utilizado para ejecutar los análisis estadísticos, con el propósito de facilitar su reproducibilidad.
+
+```{r informacion_sesion}
+sessioninfo::session_info()
+```
