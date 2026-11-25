@@ -1,0 +1,754 @@
+
+---
+title: "Factores asociados a la progresión de la enfermedad renal crónica ERC"
+subtitle: "Análisis de una cohorte prospectiva de 300 participantes"
+author: "Ana Sofía Gramajo Obando - Maestría en epidemiología clínica PUJ"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+# Librerías
+library(tidyverse)
+library(here)
+library(gtsummary)
+library(survival)
+library(survminer)
+library(broom)
+library(patchwork)
+library(ggplot2)
+
+# Cargar base analítica
+base <- readRDS(
+  here("data", "processed", "base_analitica_v1.0.rds")
+)
+```
+
+# Resumen
+
+**Antecedentes:** La progresión de la enfermedad renal crónica (ERC) hacia estadios avanzados o hacia terapia de reemplazo renal (TRR) representa una carga clínica considerable. La identificación de factores basales asociados con la progresión permite orientar estrategias de seguimiento diferenciadas.
+
+**Objetivo:** Identificar los factores basales asociados con la progresión a estadio G5 o inicio de TRR en una cohorte de pacientes con ERC en estadios G2 a G4.
+
+**Métodos:** Se analizaron datos sintéticos de una cohorte prospectiva de `r nrow(base)` participantes, con un seguimiento previsto de 24 meses. Se utilizaron modelos de regresión logística, regresión lineal múltiple y riesgos proporcionales de Cox.
+
+
+**Resultados:** Se analizaron `r nrow(base)` participantes con enfermedad renal crónica, de los cuales `r sum(base$progresion_g5_o_trr, na.rm = TRUE)` presentaron progresión a G5 o inicio de terapia de reemplazo renal, equivalente al `r round(mean(base$progresion_g5_o_trr, na.rm = TRUE) * 100, 1)`% de la cohorte. De los eventos registrados, `r sum(base$progresion_g5_o_trr[as.character(base$estadio_basal) == "G4"], na.rm = TRUE)` ocurrieron en participantes clasificados inicialmente en G4. Los modelos de regresión logística y Cox identificaron una asociación positiva entre el estadio G4 y la progresión renal, mientras que la regresión lineal mostró una tasa anual de cambio de TFG más negativa en este grupo. También se identificaron asociaciones entre diabetes mellitus, uso de IECA o ARA2 y el cambio anual de TFG.
+
+**Conclusiones:** El estadio basal G4 presentó las asociaciones más pronunciadas con la progresión renal y el cambio anual de TFG. Los tres modelos mostraron coherencia en la dirección de los resultados. Sin embargo, la distribución desigual de eventos, la limitada precisión de algunas estimaciones y las incertidumbres relacionadas con el seguimiento condicionan su interpretación. Estos resultados corresponden a una cohorte sintética utilizada con fines académicos.
+
+
+---
+
+
+
+
+# Métodos
+
+## Fuente de datos y participantes
+
+Se realizó un análisis de una cohorte prospectiva sintética de pacientes con enfermedad renal crónica (ERC), desarrollada con fines académicos para el curso de Seminario de Epidemiología II. La base incluyó `r nrow(base)` participantes clasificados inicialmente en los estadios G2, G3a, G3b y G4 de ERC.
+
+El seguimiento contempló un período de 24 meses, con mediciones basales y evaluaciones programadas en los meses 12 y 24. Se recopilaron variables sociodemográficas, clínicas, bioquímicas y relacionadas con el tratamiento, con el propósito de evaluar los factores basales asociados con la progresión renal.
+
+## Variables
+
+**Desenlace primario:** Progresión de la ERC a estadio G5 o inicio de terapia de reemplazo renal (TRR) durante el seguimiento. Según la definición operativa de la guía, se consideró una TFG estimada inferior a 15 mL/min/1.73 m² en la última visita disponible o el registro de inicio de diálisis o trasplante renal.
+
+**Exposición principal:** Estadio basal de ERC, clasificado según las categorías G2, G3a, G3b y G4. Para los modelos de progresión se agruparon los estadios G2-G3b y se compararon con G4, debido a la escasa frecuencia de eventos en los estadios menos avanzados. Para el modelo lineal se conservaron las cuatro categorías originales, utilizando G2 como referencia.
+
+**Desenlace secundario:** Tasa anual de cambio de la TFG, expresada en mL/min/1.73 m² por año. Los valores negativos representan una disminución de la función renal durante el seguimiento.
+
+**Covariables:** Se consideraron características basales como edad, sexo, diabetes mellitus, hipertensión arterial, proteinuria, hemoglobina, presión arterial sistólica y uso de IECA o ARA2, de acuerdo con la especificación de cada modelo.
+
+## Análisis estadístico
+
+Inicialmente se realizó un análisis descriptivo de las características basales de los participantes y de la frecuencia de progresión renal según el estadio de ERC.
+
+Para evaluar la asociación entre el estadio basal y la progresión a G5 o inicio de TRR se utilizó regresión logística binaria, estimando odds ratios (OR) con intervalos de confianza del 95 %. El modelo ajustado incluyó el estadio basal agrupado, la edad y la log-proteinuria basal.
+
+La tasa anual de cambio de la TFG se analizó mediante regresión lineal múltiple, conservando los cuatro estadios basales. El modelo incorporó edad, sexo, diabetes, hipertensión, log-proteinuria basal, hemoglobina, presión arterial sistólica y uso de IECA o ARA2. Se estimaron coeficientes beta con sus respectivos intervalos de confianza del 95 %.
+
+El tiempo hasta la progresión renal se evaluó mediante curvas de Kaplan-Meier y regresión de riesgos proporcionales de Cox. Se estimaron hazard ratios (HR) ajustados por edad y log-proteinuria basal, utilizando G2-G3b como categoría de referencia.
+
+Se realizó un análisis de casos completos para cada modelo, excluyendo los registros con valores faltantes en las variables necesarias para su estimación.
+
+La validación estadística incluyó evaluación de multicolinealidad, análisis de residuos, pruebas de bondad de ajuste, normalidad y homocedasticidad, según el tipo de modelo. Para Cox se evaluó el supuesto de riesgos proporcionales mediante los residuos de Schoenfeld.
+
+Adicionalmente, se realizaron dos análisis de sensibilidad para examinar la estabilidad de las estimaciones ante la exclusión temporal de un valor extremo de creatinina y de dos registros con incertidumbre sobre la secuencia entre progresión y pérdida de seguimiento. Estos últimos permanecen pendientes de verificación.
+
+
+# Resultados
+
+## Características basales
+
+La cohorte incluyó `r nrow(base)` participantes, con una mediana de edad de `r median(base$edad, na.rm = TRUE)` años (RIQ: `r quantile(base$edad, 0.25, na.rm = TRUE)`–`r quantile(base$edad, 0.75, na.rm = TRUE)`).
+
+El `r round(mean(base$sexo == "Femenino", na.rm = TRUE)*100, 1)`% de los participantes eran mujeres.
+
+La distribución de participantes según el estadio basal de ERC fue: G2 (`r sum(base$estadio_basal == "G2", na.rm = TRUE)`), G3a (`r sum(base$estadio_basal == "G3a", na.rm = TRUE)`), G3b (`r sum(base$estadio_basal == "G3b", na.rm = TRUE)`) y G4 (`r sum(base$estadio_basal == "G4", na.rm = TRUE)`).
+
+### Tabla 1. Características basales
+
+```{r tabla_caracteristicas_basales}
+# Preparar tabla de características basales
+
+tabla_1 <- base %>%
+  select(
+    estadio_basal,
+    edad,
+    sexo,
+    etiologia_agrupada,
+    diabetes,
+    hipertension,
+    imc_calculado,
+    tfg_ml_min_basal,
+    hemoglobina_g_dl_basal,
+    albumina_g_dl_basal,
+    proteinuria_mg_g_basal,
+    ieca_o_ara2,
+    n_medicamentos_totales
+  ) %>%
+  gtsummary::tbl_summary(
+    by = estadio_basal,
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}–{p75})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = list(
+      all_continuous() ~ 1
+    ),
+    missing = "no",
+    label = list(
+      edad ~ "Edad (años)",
+      sexo ~ "Sexo",
+      etiologia_agrupada ~ "Etiología de la ERC",
+      diabetes ~ "Diabetes mellitus",
+      hipertension ~ "Hipertensión arterial",
+      imc_calculado ~ "IMC (kg/m²)",
+      tfg_ml_min_basal ~ "TFG estimada basal",
+      hemoglobina_g_dl_basal ~ "Hemoglobina (g/dL)",
+      albumina_g_dl_basal ~ "Albúmina sérica (g/dL)",
+      proteinuria_mg_g_basal ~ "Proteinuria (mg/g)",
+      ieca_o_ara2 ~ "Uso de IECA o ARA2",
+      n_medicamentos_totales ~ "Número de medicamentos"
+    )
+  ) %>%
+  gtsummary::add_overall(last = TRUE) %>%
+  gtsummary::add_p() %>%
+
+gtsummary::modify_caption(
+  "**Tabla 1. Características basales de la cohorte por estadio de ERC**"
+) %>%
+gtsummary::modify_header(
+  label = "**Característica**"
+) %>%
+gtsummary::bold_labels()
+
+
+# Mostrar tabla
+tabla_1
+```
+
+## Seguimiento y desenlace
+
+Durante los 24 meses de seguimiento, se registraron `r sum(base$perdida_seguimiento_m24, na.rm = TRUE)` participantes con pérdida de seguimiento, equivalentes al `r round(mean(base$perdida_seguimiento_m24, na.rm = TRUE) * 100, 1)`% de los participantes con información disponible para esta variable.
+
+El desenlace primario, definido como progresión a estadio G5 o inicio de terapia de reemplazo renal, ocurrió en `r sum(base$progresion_g5_o_trr, na.rm = TRUE)` participantes (`r round(mean(base$progresion_g5_o_trr, na.rm = TRUE) * 100, 1)`%).
+
+### Curvas de Kaplan-Meier según estadio basal
+
+Se estimó la probabilidad de permanecer libre de progresión renal durante el seguimiento mediante el método de Kaplan-Meier, considerando los cuatro estadios basales originales.
+
+```{r curvas_kaplan_meier_final, fig.width=10, fig.height=8, out.width='100%'}
+# Preparar datos de supervivencia
+base_surv <- base %>%
+  filter(
+    !is.na(tiempo_seguimiento_dias),
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_basal)
+  ) %>%
+  mutate(
+    estadio_basal = factor(
+      as.character(estadio_basal),
+      levels = c("G2", "G3a", "G3b", "G4")
+    )
+  )
+
+# Estimar curvas de Kaplan-Meier
+km_estadio <- survival::survfit(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    progresion_g5_o_trr
+  ) ~ estadio_basal,
+  data = base_surv
+)
+
+# Generar figura
+grafico_km <- survminer::ggsurvplot(
+  km_estadio,
+  data = base_surv,
+  pval = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  risk.table.height = 0.25,
+  risk.table.title = "Participantes en riesgo",
+  palette = c(
+    "#93C6E0",
+    "#4A90D9",
+    "#2E75B6",
+    "#1F5C99"
+  ),
+  legend.labs = c("G2", "G3a", "G3b", "G4"),
+  legend.title = "Estadio basal de ERC",
+  xlab = "Tiempo de seguimiento (días)",
+  ylab = "Probabilidad de permanecer sin progresión",
+  title = "Curvas de Kaplan-Meier por estadio basal",
+  ggtheme = ggplot2::theme_minimal(
+    base_size = 12
+  )
+)
+
+print(grafico_km)
+```
+
+Las curvas de Kaplan-Meier mostraron diferencias en la probabilidad estimada de permanecer libre de progresión renal según el estadio basal de enfermedad renal crónica. Los participantes clasificados en G2 y G3a no presentaron eventos durante el seguimiento, mientras que en G3b se registró un único evento. En contraste, el estadio G4 mostró una disminución progresiva de la probabilidad de permanecer sin progresión, con una separación evidente respecto a los estadios menos avanzados. La prueba de Log-rank identificó diferencias estadísticamente significativas entre las curvas (p < 0.0001). Estos hallazgos son consistentes con la mayor frecuencia de progresión observada en G4 y con la dirección de las asociaciones estimadas mediante los modelos de regresión logística y Cox. No obstante, la distribución desigual de los eventos y la incertidumbre temporal de dos registros constituyen limitaciones relevantes para la interpretación del análisis de supervivencia.
+
+
+### Mediana del tiempo libre de progresión
+
+```{r mediana_kaplan_meier}
+# Estimar medianas de supervivencia por estadio
+
+tabla_medianas <- survminer::surv_median(
+  km_estadio
+)
+
+
+knitr::kable(
+  tabla_medianas,
+  digits = 1,
+  col.names = c(
+    "Estadio basal de ERC",
+    "Mediana (días)",
+    "IC 95 % inferior",
+    "IC 95 % superior"
+  ),
+  caption = "Mediana del tiempo libre de progresión por estadio basal"
+)
+
+```
+
+La mediana estimada del tiempo libre de progresión renal en los participantes clasificados inicialmente en G4 fue de `r tabla_medianas$median[tabla_medianas$strata == "estadio_basal=G4"]` días (IC del 95 %: `r tabla_medianas$lower[tabla_medianas$strata == "estadio_basal=G4"]`–`r tabla_medianas$upper[tabla_medianas$strata == "estadio_basal=G4"]` días). En contraste, los estadios G2, G3a y G3b no alcanzaron la mediana durante el período observado, debido a que la probabilidad estimada de permanecer libre de progresión se mantuvo por encima del 50 %. Estos resultados muestran una mayor frecuencia y una ocurrencia más temprana de progresión en el estadio G4. No obstante, la concentración de eventos en este grupo y la incertidumbre temporal de dos registros constituyen limitaciones para la estimación del tiempo hasta la progresión.
+
+
+## Factores asociados a la progresión
+
+### Regresión logística
+
+Se evaluó la asociación entre el estadio basal de enfermedad renal crónica y la progresión a G5 o inicio de terapia de reemplazo renal. Para este análisis se utilizó la agrupación G2-G3b frente a G4, considerando el primero como grupo de referencia.
+
+Se estimaron modelos de regresión logística crudo y ajustado por edad y log-proteinuria basal.
+
+```{r modelos_logisticos_final}
+# Preparar datos
+base_log_final <- base %>%
+  mutate(
+    estadio_modelo = factor(
+      if_else(
+        as.character(estadio_basal) == "G4",
+        "G4",
+        "G2-G3b",
+        missing = NA_character_
+      ),
+      levels = c("G2-G3b", "G4")
+    )
+  ) %>%
+  filter(
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_modelo),
+    !is.na(edad),
+    !is.na(log_proteinuria_basal)
+  )
+
+# Modelo crudo
+modelo_log_crudo_final <- glm(
+  progresion_g5_o_trr ~ estadio_modelo,
+  data = base_log_final,
+  family = binomial()
+)
+
+# Modelo ajustado
+modelo_log_ajustado_final <- glm(
+  progresion_g5_o_trr ~ estadio_modelo +
+    edad +
+    log_proteinuria_basal,
+  data = base_log_final,
+  family = binomial()
+)
+
+# Tabla del modelo crudo
+tabla_log_crudo <- gtsummary::tbl_regression(
+  modelo_log_crudo_final,
+  exponentiate = TRUE,
+  include = estadio_modelo,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC"
+  )
+)
+
+# Tabla del modelo ajustado
+tabla_log_ajustado <- gtsummary::tbl_regression(
+  modelo_log_ajustado_final,
+  exponentiate = TRUE,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC",
+    edad ~ "Edad (por año)",
+    log_proteinuria_basal ~ "Log-proteinuria basal"
+  )
+)
+
+# Comparación de modelos
+gtsummary::tbl_merge(
+  tbls = list(
+    tabla_log_crudo,
+    tabla_log_ajustado
+  ),
+  tab_spanner = c(
+    "**Modelo crudo**",
+    "**Modelo ajustado**"
+  )
+) %>%
+  gtsummary::modify_header(
+    label = "**Característica**"
+  ) %>%
+  gtsummary::modify_caption(
+    "**Tabla 2. Regresión logística para progresión renal**"
+  ) %>%
+  gtsummary::bold_labels()
+```
+
+La regresión logística mostró una asociación estadísticamente significativa entre el estadio basal G4 y la progresión a G5 o inicio de terapia de reemplazo renal. En el modelo crudo se obtuvo un OR de `r round(exp(coef(modelo_log_crudo_final)["estadio_modeloG4"]), 2)`, mientras que en el modelo ajustado por edad y log-proteinuria basal el OR fue de `r round(exp(coef(modelo_log_ajustado_final)["estadio_modeloG4"]), 2)`. La magnitud de la asociación presentó cambios mínimos después del ajuste. La edad y la log-proteinuria basal no mostraron asociaciones estadísticamente significativas. Aunque los resultados evidencian una asociación positiva importante entre el estadio G4 y la progresión renal, la amplitud de los intervalos de confianza refleja una precisión limitada, relacionada principalmente con la escasa frecuencia de eventos en el grupo de referencia.
+
+
+### Modelo de regresión de Cox
+
+Se evaluó la asociación entre el estadio basal de enfermedad renal crónica y el tiempo hasta la progresión a G5 o inicio de terapia de reemplazo renal. Se utilizó la agrupación G2-G3b frente a G4, manteniendo el ajuste por edad y log-proteinuria basal.
+
+```{r modelos_cox_final}
+# Preparar datos para Cox
+base_cox_final <- base %>%
+  mutate(
+    estadio_modelo = factor(
+      if_else(
+        as.character(estadio_basal) == "G4",
+        "G4",
+        "G2-G3b",
+        missing = NA_character_
+      ),
+      levels = c("G2-G3b", "G4")
+    )
+  ) %>%
+  filter(
+    !is.na(tiempo_seguimiento_dias),
+    !is.na(progresion_g5_o_trr),
+    !is.na(estadio_modelo),
+    !is.na(edad),
+    !is.na(log_proteinuria_basal)
+  )
+
+# Modelo de Cox crudo
+modelo_cox_crudo_final <- survival::coxph(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    progresion_g5_o_trr
+  ) ~ estadio_modelo,
+  data = base_cox_final,
+  ties = "efron"
+)
+
+# Modelo de Cox ajustado
+modelo_cox_ajustado_final <- survival::coxph(
+  survival::Surv(
+    tiempo_seguimiento_dias,
+    progresion_g5_o_trr
+  ) ~ estadio_modelo +
+    edad +
+    log_proteinuria_basal,
+  data = base_cox_final,
+  ties = "efron"
+)
+
+# Tabla del modelo crudo
+tabla_cox_crudo <- gtsummary::tbl_regression(
+  modelo_cox_crudo_final,
+  exponentiate = TRUE,
+  include = estadio_modelo,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC"
+  )
+)
+
+# Tabla del modelo ajustado
+tabla_cox_ajustado <- gtsummary::tbl_regression(
+  modelo_cox_ajustado_final,
+  exponentiate = TRUE,
+  label = list(
+    estadio_modelo ~ "Estadio basal de ERC",
+    edad ~ "Edad (por año)",
+    log_proteinuria_basal ~ "Log-proteinuria basal"
+  )
+)
+
+# Comparación de modelos
+gtsummary::tbl_merge(
+  tbls = list(
+    tabla_cox_crudo,
+    tabla_cox_ajustado
+  ),
+  tab_spanner = c(
+    "**Modelo crudo**",
+    "**Modelo ajustado**"
+  )
+) %>%
+  gtsummary::modify_header(
+    label = "**Característica**"
+  ) %>%
+  gtsummary::modify_caption(
+    "**Tabla 3. Regresión de Cox para progresión renal**"
+  ) %>%
+  gtsummary::bold_labels()
+```
+
+
+El modelo de riesgos proporcionales de Cox mostró una asociación estadísticamente significativa entre el estadio basal G4 y el tiempo hasta la progresión a G5 o inicio de terapia de reemplazo renal. En el modelo crudo se obtuvo un HR de `r round(exp(coef(modelo_cox_crudo_final)["estadio_modeloG4"]), 2)`, mientras que en el modelo ajustado por edad y log-proteinuria basal el HR fue de `r round(exp(coef(modelo_cox_ajustado_final)["estadio_modeloG4"]), 2)`. La magnitud del estimador prácticamente no cambió después del ajuste y ninguna de las dos covariables mostró una asociación estadísticamente significativa. Estos resultados indican una mayor tasa instantánea de progresión renal en los participantes clasificados inicialmente en G4, en comparación con G2-G3b. Sin embargo, la concentración de eventos en G4 y la escasa frecuencia de progresión en el grupo de referencia contribuyen a la amplitud de los intervalos de confianza y a la limitada precisión de las estimaciones.
+
+
+### Regresión lineal múltiple
+
+Se evaluaron los factores basales asociados con la tasa anual de cambio de la tasa de filtración glomerular (TFG). Se conservaron los cuatro estadios originales de enfermedad renal crónica, utilizando G2 como categoría de referencia.
+
+```{r modelo_lineal_final_reporte}
+# Preparar datos para regresión lineal
+
+base_lineal_final <- base %>%
+  mutate(
+    estadio_basal = factor(
+      as.character(estadio_basal),
+      levels = c("G2", "G3a", "G3b", "G4"),
+      ordered = FALSE
+    ),
+    sexo = factor(
+      as.character(sexo),
+      levels = c("Femenino", "Masculino")
+    ),
+    diabetes = factor(
+      diabetes,
+      levels = c(FALSE, TRUE),
+      labels = c("No", "Sí")
+    ),
+    hipertension = factor(
+      hipertension,
+      levels = c(FALSE, TRUE),
+      labels = c("No", "Sí")
+    ),
+    ieca_o_ara2 = factor(
+      ieca_o_ara2,
+      levels = c(FALSE, TRUE),
+      labels = c("No", "Sí")
+    )
+  )
+
+# Ajustar el modelo lineal múltiple
+
+modelo_lineal_final <- lm(
+  tasa_declive_tfg ~
+    estadio_basal +
+    edad +
+    sexo +
+    diabetes +
+    hipertension +
+    log_proteinuria_basal +
+    hemoglobina_g_dl_basal +
+    pas_mmhg_basal +
+    ieca_o_ara2,
+  data = base_lineal_final
+)
+
+# Verificar participantes incluidos
+
+cat(
+  "Participantes del modelo lineal:",
+  nobs(modelo_lineal_final),
+  "\n"
+)
+
+# Generar tabla de regresión lineal
+
+tabla_lineal_final <- gtsummary::tbl_regression(
+  modelo_lineal_final,
+  exponentiate = FALSE,
+  label = list(
+    estadio_basal ~ "Estadio basal de ERC",
+    edad ~ "Edad (por año)",
+    sexo ~ "Sexo",
+    diabetes ~ "Diabetes mellitus",
+    hipertension ~ "Hipertensión arterial",
+    log_proteinuria_basal ~ "Log-proteinuria basal",
+    hemoglobina_g_dl_basal ~ "Hemoglobina (g/dL)",
+    pas_mmhg_basal ~ "Presión arterial sistólica (mmHg)",
+    ieca_o_ara2 ~ "Uso de IECA o ARA2"
+  )
+) %>%
+
+gtsummary::modify_header(
+  label = "**Característica**",
+  estimate = "**Beta**",
+  p.value = "**Valor p**"
+) %>%
+gtsummary::modify_caption(
+  "**Tabla 4. Regresión lineal múltiple para el cambio anual de TFG**"
+) %>%
+gtsummary::bold_labels()
+
+# Mostrar tabla
+tabla_lineal_final
+```
+
+El modelo de regresión lineal múltiple permitió identificar factores asociados con el cambio anual de la tasa de filtración glomerular. Los participantes clasificados inicialmente en G4 presentaron una tasa anual de cambio de TFG `r round(abs(coef(modelo_lineal_final)[["estadio_basalG4"]]), 2)` mL/min/1.73 m² por año más negativa que aquellos clasificados en G2, después del ajuste por las demás covariables (p < 0.001).
+
+Asimismo, la presencia de diabetes mellitus se asoció con una tasa anual de cambio de TFG más negativa (β = `r round(coef(modelo_lineal_final)[["diabetesSí"]], 2)`; p = 0.021). El uso de IECA o ARA2 también presentó una asociación negativa con el cambio anual de TFG (β = `r round(coef(modelo_lineal_final)[["ieca_o_ara2Sí"]], 2)`; p = 0.005).
+
+Estos resultados indican que el estadio G4, la presencia de diabetes mellitus y el uso de IECA o ARA2 se asociaron con una disminución anual más pronunciada de la función renal. Sin embargo, estas asociaciones no permiten establecer relaciones causales. Particularmente, la asociación observada con IECA o ARA2 podría estar influida por diferencias en la gravedad clínica y la indicación del tratamiento.
+
+
+# Discusión
+
+El principal hallazgo de este análisis fue la asociación entre el estadio basal G4 de enfermedad renal crónica y una mayor progresión hacia G5 o inicio de terapia de reemplazo renal. Los modelos de regresión logística y de Cox mostraron asociaciones positivas de gran magnitud, que persistieron después del ajuste por edad y log-proteinuria basal. Asimismo, la regresión lineal múltiple identificó que los participantes clasificados inicialmente en G4 presentaron una tasa anual de cambio de TFG más negativa en comparación con aquellos en G2. Estos resultados muestran coherencia entre los diferentes métodos estadísticos y señalan al estadio basal como una característica relevante para comprender la progresión renal en la cohorte analizada.
+
+Desde el punto de vista clínico, estos hallazgos son compatibles con el conocimiento actual sobre la enfermedad renal crónica. Una menor TFG basal se relaciona con un mayor riesgo de alcanzar estadios avanzados, y las recomendaciones KDIGO destacan la importancia de evaluar conjuntamente la función renal y la albuminuria para orientar el seguimiento. Sin embargo, debe considerarse que los participantes en G4 se encuentran inicialmente más próximos al umbral utilizado para definir la progresión a G5. Esta característica puede contribuir a las diferencias observadas entre los grupos, sin que necesariamente represente una mayor velocidad de deterioro en todos los participantes.
+
+Otro resultado relevante fue la asociación entre la presencia de diabetes mellitus y una tasa anual de cambio de TFG más negativa. Este hallazgo es clínicamente plausible debido a la participación de la diabetes en el desarrollo y progresión del daño renal. También se identificó una asociación negativa entre el uso de IECA o ARA2 y el cambio anual de TFG. Este resultado requiere una explicación adicional, ya que estos medicamentos forman parte de las estrategias terapéuticas utilizadas para reducir la progresión de la enfermedad renal en pacientes con indicaciones específicas. La asociación observada podría relacionarse con confusión por indicación, diferencias en la gravedad inicial de los pacientes o factores clínicos que no fueron completamente controlados en el modelo. Por ello, no debe interpretarse como evidencia de un efecto perjudicial del tratamiento.
+
+La comparación de los modelos mostró resultados consistentes en la dirección de la asociación del estadio G4 con la progresión renal, aunque las medidas estimadas representan conceptos diferentes. El OR expresa una asociación con las odds de presentar el desenlace durante el período observado, mientras que el HR corresponde a la razón de tasas instantáneas del evento durante el seguimiento. La concentración de eventos en G4 y su escasa frecuencia en los estadios menos avanzados contribuyeron a estimaciones elevadas y a intervalos de confianza amplios. Los análisis de sensibilidad mostraron variaciones relativamente pequeñas de los estimadores principales, pero no eliminaron estas limitaciones.
+
+En términos clínicos, los resultados destacan la importancia de evaluar el estadio basal de ERC junto con las características metabólicas y bioquímicas para identificar pacientes que podrían requerir un seguimiento más estrecho. No obstante, las asociaciones observadas corresponden a una base sintética utilizada con fines académicos y no deben emplearse para establecer recomendaciones clínicas individuales. El principal aporte del ejercicio consiste en integrar distintos métodos estadísticos, evaluar su coherencia y reconocer cómo las características de los datos influyen en la interpretación de los resultados.
+
+# Limitaciones
+
+El análisis presenta varias limitaciones metodológicas. En primer lugar, se utilizó una base de datos sintética desarrollada con fines académicos, por lo que los resultados no representan estimaciones obtenidas en una población clínica real ni pueden generalizarse directamente a pacientes con enfermedad renal crónica.
+
+En segundo lugar, la distribución de los eventos fue marcadamente desigual entre los estadios basales. La escasa frecuencia de progresión en el grupo G2-G3b contribuyó a la amplitud de los intervalos de confianza y limitó la precisión de los modelos logístico y de Cox. La agrupación de estadios permitió simplificar los modelos, pero también redujo la información disponible sobre las diferencias entre categorías originales.
+
+El análisis de casos completos redujo el número de participantes incluidos en algunos modelos. Si la ausencia de información se relaciona con características clínicas o con el desenlace, podría introducir sesgo de selección. Adicionalmente, se identificaron observaciones potencialmente influyentes que requirieron evaluaciones complementarias.
+
+En el análisis de supervivencia permaneció pendiente la verificación de la secuencia temporal de registros que presentaron simultáneamente progresión renal y pérdida de seguimiento. Aunque se realizó un análisis de sensibilidad para explorar su influencia sobre las estimaciones, esta evaluación no sustituye la confirmación de la información original.
+
+Finalmente, el carácter observacional del diseño analítico y la posibilidad de confusión residual impiden establecer relaciones causales entre las exposiciones basales y los desenlaces evaluados.
+
+# Conclusiones
+
+El estadio basal G4 de enfermedad renal crónica presentó una asociación positiva con la progresión hacia G5 o inicio de terapia de reemplazo renal, así como una tasa anual de cambio de TFG más negativa en comparación con los estadios menos avanzados.
+
+Los modelos de regresión logística, regresión lineal múltiple y Cox mostraron coherencia en la dirección de las asociaciones, aunque la distribución desigual de eventos y la limitada precisión de algunas estimaciones condicionan la interpretación de su magnitud.
+
+El ejercicio permitió integrar métodos estadísticos complementarios y documentar las principales limitaciones metodológicas, destacando la importancia de verificar los supuestos y la calidad de los datos antes de considerar definitivos los resultados.
+
+# Información de sesión
+
+La siguiente información documenta las versiones de R y de los paquetes utilizados durante la elaboración del reporte final, con el propósito de facilitar la reproducibilidad de los análisis.
+
+```{r informacion_sesion_final}
+sessioninfo::session_info()
+```
+
+# Exportación de productos finales
+
+Se generaron tablas y figuras para su utilización en el reporte académico y en futuros productos de divulgación.
+
+```{r exportar_productos_finales, include=FALSE}
+# ==========================================
+# 1. CREAR CARPETAS DE EXPORTACIÓN
+# ==========================================
+
+dir.create(
+  here("output", "tables"),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  here("output", "figures"),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# ==========================================
+# 2. EXPORTAR TABLAS A WORD
+# ==========================================
+
+# Tabla 1: Características basales
+flextable::save_as_docx(
+  gtsummary::as_flex_table(tabla_1),
+  path = here(
+    "output", "tables",
+    "tabla_01_caracteristicas_basales.docx"
+  )
+)
+
+# Tabla 2: Regresión logística ajustada
+flextable::save_as_docx(
+  gtsummary::as_flex_table(tabla_log_ajustado),
+  path = here(
+    "output", "tables",
+    "tabla_02_or_ajustados.docx"
+  )
+)
+
+# Tabla 3: Regresión de Cox ajustada
+flextable::save_as_docx(
+  gtsummary::as_flex_table(tabla_cox_ajustado),
+  path = here(
+    "output", "tables",
+    "tabla_03_hr_ajustados.docx"
+  )
+)
+
+# Tabla 4: Regresión lineal múltiple
+flextable::save_as_docx(
+  gtsummary::as_flex_table(tabla_lineal_final),
+  path = here(
+    "output", "tables",
+    "tabla_04_regresion_lineal.docx"
+  )
+)
+
+# ==========================================
+# 3. FIGURA 1: TFG Y CAMBIO ANUAL
+# ==========================================
+
+base_figuras <- base %>%
+  mutate(
+    estadio_basal = factor(
+      as.character(estadio_basal),
+      levels = c("G2", "G3a", "G3b", "G4")
+    )
+  )
+
+colores_erc <- c(
+  "G2" = "#93C6E0",
+  "G3a" = "#4A90D9",
+  "G3b" = "#2E75B6",
+  "G4" = "#1F5C99"
+)
+
+fig_tfg <- base_figuras %>%
+  ggplot(
+    aes(x = estadio_basal,
+        y = tfg_ml_min_basal,
+        fill = estadio_basal)
+  ) +
+  geom_violin(alpha = 0.6, trim = FALSE) +
+  geom_boxplot(
+    width = 0.12,
+    fill = "white"
+  ) +
+  scale_fill_manual(values = colores_erc) +
+  labs(
+    title = "A. TFG basal por estadio de ERC",
+    x = "Estadio basal",
+    y = "TFG (mL/min/1.73 m²)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+
+fig_cambio <- base_figuras %>%
+  filter(!is.na(tasa_declive_tfg)) %>%
+  ggplot(
+    aes(x = estadio_basal,
+        y = tasa_declive_tfg,
+        fill = estadio_basal)
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_violin(alpha = 0.6, trim = FALSE) +
+  geom_boxplot(
+    width = 0.12,
+    fill = "white"
+  ) +
+  scale_fill_manual(values = colores_erc) +
+  labs(
+    title = "B. Cambio anual de TFG",
+    x = "Estadio basal",
+    y = "Cambio anual de TFG (mL/min/1.73 m²/año)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+
+figura_1 <- fig_tfg / fig_cambio
+
+ggplot2::ggsave(
+  filename = here(
+    "output", "figures",
+    "figura_01_tfg_declive_estadio.png"
+  ),
+  plot = figura_1,
+  width = 8,
+  height = 10,
+  units = "in",
+  dpi = 300
+)
+
+# ==========================================
+# 4. FIGURA 2: KAPLAN-MEIER
+# ==========================================
+
+# Guardar curva junto con tabla de riesgo
+grDevices::png(
+  filename = here(
+    "output", "figures",
+    "figura_02_kaplan_meier.png"
+  ),
+  width = 10,
+  height = 8,
+  units = "in",
+  res = 300
+)
+
+print(grafico_km)
+
+grDevices::dev.off()
+
+# ==========================================
+# 5. VERIFICAR ARCHIVOS EXPORTADOS
+# ==========================================
+
+archivos_exportados <- c(
+  list.files(
+    here("output", "tables"),
+    full.names = TRUE
+  ),
+  list.files(
+    here("output", "figures"),
+    full.names = TRUE
+  )
+)
+
+print(basename(archivos_exportados))
+```
