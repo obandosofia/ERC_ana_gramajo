@@ -88,3 +88,61 @@ Las carpetas `data/raw/` y `data/processed/` están excluidas del control de ver
 
 Base sintética proporcionada para las prácticas del Módulo II del Seminario de Epidemiología Clínica II.
 
+
+
+
+
+
+## Estado del proyecto
+
+**Versión actual:** v1.0 - Análisis final
+
+**Proyecto:** Cohorte de pacientes con enfermedad renal crónica (ERC).
+
+**Curso:** Seminario de Epidemiología II.
+
+**Autora:** Ana Sofía Gramajo.
+
+### Productos generados
+
+El proyecto incluye los análisis estadísticos y un reporte final reproducible desarrollado mediante R Markdown.
+
+**Reporte final:**
+- `code/08_reporte_final.Rmd`
+- `code/08_reporte_final.html`
+
+**Tablas:**
+- `output/tables/tabla_01_caracteristicas_basales.docx`
+- `output/tables/tabla_02_or_ajustados.docx`
+- `output/tables/tabla_03_hr_ajustados.docx`
+- `output/tables/tabla_04_regresion_lineal.docx`
+
+**Figuras:**
+- `output/figures/figura_01_tfg_declive_estadio.png`
+- `output/figures/figura_02_kaplan_meier.png`
+
+### Cómo reproducir el análisis
+
+1. Clonar el repositorio de GitHub.
+2. Colocar la base sintética `base_erc_cohorte.csv` en `data/raw/`.
+3. Instalar los paquetes de R utilizados.
+4. Ejecutar los scripts de preparación y análisis en orden numérico.
+5. Generar `code/08_reporte_final.Rmd` mediante Knit.
+6. Consultar los productos exportados en `output/tables/` y `output/figures/`.
+
+### Consideraciones metodológicas
+
+Los datos utilizados son sintéticos y fueron proporcionados con fines académicos.
+
+Los análisis de progresión utilizaron la agrupación G2-G3b frente a G4 debido a la distribución desigual de eventos.
+
+Se realizaron evaluaciones de supuestos estadísticos y análisis de sensibilidad.
+
+Permanece pendiente la verificación de la secuencia temporal de dos registros con progresión renal y pérdida de seguimiento.
+
+### Reproducibilidad
+
+Los análisis se desarrollaron en RStudio mediante R Markdown. Los reportes contienen código, resultados estadísticos e información de sesión para documentar las versiones de R y los paquetes utilizados.
+
+La base de datos no debe publicarse en el repositorio de GitHub.
+

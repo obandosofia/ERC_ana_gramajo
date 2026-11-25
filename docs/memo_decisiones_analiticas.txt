@@ -1,0 +1,48 @@
+# Memo de decisiones analíticas — Cohorte ERC
+
+**Proyecto:** Factores asociados a la progresión de la enfermedad renal crónica
+
+**Curso:** Seminario de Epidemiología II
+
+**Autora:** Ana Sofía Gramajo
+
+**Fecha:** Noviembre de 2026
+
+## 1. Selección de modelos estadísticos
+
+Se utilizaron tres modelos complementarios: regresión logística para evaluar la progresión a G5 o inicio de terapia de reemplazo renal, regresión lineal múltiple para analizar el cambio anual de TFG y regresión de Cox para evaluar el tiempo hasta la progresión.
+
+## 2. Agrupación del estadio basal
+
+Para los modelos logístico y de Cox se agruparon los estadios G2–G3b frente a G4, debido a la distribución desigual de eventos. En el modelo lineal se conservaron las cuatro categorías originales, utilizando G2 como referencia.
+
+## 3. Selección de covariables
+
+Los modelos logístico y de Cox se ajustaron por edad y log-proteinuria basal. En el modelo lineal se incorporaron covariables sociodemográficas, clínicas y relacionadas con el tratamiento.
+
+## 4. Evaluación de supuestos
+
+Se realizaron evaluaciones de multicolinealidad, residuos, bondad de ajuste, normalidad y homocedasticidad, según el modelo correspondiente. En el modelo de Cox se evaluó el supuesto de riesgos proporcionales mediante los residuos de Schoenfeld.
+
+Se identificaron observaciones potencialmente influyentes y limitaciones relacionadas con la escasa frecuencia de eventos en el grupo de referencia.
+
+## 5. Análisis de sensibilidad
+
+Se realizaron dos análisis de sensibilidad:
+
+- Exclusión temporal de un registro con creatinina basal superior a 15 mg/dL, para evaluar su influencia sobre el modelo logístico.
+- Exclusión exploratoria de los registros ERC-0162 y ERC-0268, debido a incertidumbre en la secuencia temporal entre progresión renal y pérdida de seguimiento.
+
+En ambos análisis, las asociaciones principales conservaron su dirección y presentaron variaciones relativamente limitadas.
+
+## 6. Limitaciones pendientes
+
+La distribución desigual de eventos contribuyó a estimaciones elevadas e intervalos de confianza amplios. Además, permanece pendiente la verificación de la secuencia temporal de dos registros en el análisis de supervivencia.
+
+Los datos son sintéticos y los resultados corresponden exclusivamente a un ejercicio académico.
+
+## 7. Preparación del reporte final
+
+Se integraron los resultados descriptivos y los modelos estadísticos en `08_reporte_final.Rmd`. Se generaron tablas en formato Word y figuras PNG a 300 DPI.
+
+Los análisis y sus decisiones metodológicas quedaron documentados para facilitar la reproducibilidad del proyecto.
